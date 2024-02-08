@@ -190,6 +190,7 @@ SceneObject SceneParser::parseMesh()
     /* add indices later */
 
     MeshAttribute position;
+    getNextToken();
     current_index += 14; // get to position attribute
     moveToken(20);       // get first letter of the src
     position.src = parseString();
