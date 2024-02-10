@@ -134,7 +134,9 @@ public:
     SceneObject parseDriver();
 
     SceneStructure parseSceneStructure();
-    void recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms);
+    static void recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms, float time = 0.0f);
+    static void getInterpolatedValue(glm::vec3 &vec, std::string method, const Driver &driver, float time);
+    static void getInterpolatedValue(glm::vec4 &vec, std::string method, const Driver &driver, float time);
 
     char getNextToken();
     void moveToken(uint32_t number);

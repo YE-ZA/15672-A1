@@ -54,7 +54,17 @@ void Application::renderLoop(SceneStructure &structure, const std::string &camer
 {
     while (!glfwWindowShouldClose(window))
     {
+        processInput(window);
         glfwPollEvents();
+        if (!pause)
+        {
+            updateTime();
+        }
+        else
+        {
+            lastPauseTime = time;
+            startTime.reset();
+        }
 
         std::vector<glm::mat4> uniformData;
         glm::mat4 view;
@@ -85,10 +95,30 @@ void Application::framebufferResizeCallback(GLFWwindow *window, int width, int h
     app->framebufferResized = true;
 }
 
+void Application::updateTime()
+{
+    if (!startTime.has_value())
+    {
+        startTime = std::chrono::high_resolution_clock::now();
+    }
+
+    auto currentTime = std::chrono::high_resolution_clock::now();
+    time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime.value()).count() + lastPauseTime;
+    time = std::fmod(time, maxTime);
+}
+
 void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, const std::string &cameraName)
 {
-    // update scene structure's ubo and cam
+    // update scene structure based on drivers
+    structure.meshes.clear();
+    structure.cameras.clear();
+    for (auto root : structure.scene.roots)
+    {
+        std::vector<glm::mat4> parentTransforms;
+        SceneParser::recordTransform(structure, std::get<Node>(structure.objects[root - 1].object), parentTransforms, time);
+    }
 
+    // record updated ubo
     for (auto meshInfo : structure.meshes)
     {
         for (auto transform : meshInfo.transforms)
@@ -103,7 +133,7 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
         if (cameraInfo.camera.name == cameraName)
         {
             findCamera = true;
-            view = glm::inverse(cameraInfo.transform);
+            view = glm::inverse(glm::translate(glm::mat4(1.0f), cameraPos) * cameraInfo.transform); // need change
             proj = glm::perspective(cameraInfo.camera.perspective.vfov, cameraInfo.camera.perspective.aspect, cameraInfo.camera.perspective.near, cameraInfo.camera.perspective.far);
             proj[1][1] *= -1;
         }
@@ -111,4 +141,27 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
 
     if (!findCamera)
         throw std::runtime_error("camera doesn't exist!");
+}
+
+void Application::processInput(GLFWwindow *window)
+{
+    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        glfwSetWindowShouldClose(window, true);
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyDown)
+    {
+        pause = !pause;
+        spaceKeyDown = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
+        spaceKeyDown = false;
+
+    // float cameraSpeed = static_cast<float>(1.0 / 240);
+    // if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+    //     cameraPos += glm::normalize(glm::cross(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0))) * cameraSpeed;
+    // if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+    //     cameraPos -= glm::normalize(glm::cross(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0))) * cameraSpeed;
+    // if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+    //     cameraPos -= cameraSpeed * glm::vec3(-1, 0, 0);
+    // if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+    //     cameraPos += cameraSpeed * glm::vec3(-1, 0, 0);
 }

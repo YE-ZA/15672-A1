@@ -18,10 +18,22 @@ public:
 private:
     GLFWwindow *window;
     bool framebufferResized = false;
+    VulkanHelper helper;
+
+    bool pause = false;
+    std::optional<std::chrono::steady_clock::time_point> startTime;
+    float lastPauseTime = 0.0f;
+    float time = 0.0f;
+    float maxTime = 5.0f;
 
     void initWindow();
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
+    void updateTime();
     void updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, const std::string &cameraName);
 
-    VulkanHelper helper;
+    void processInput(GLFWwindow *window);
+    bool spaceKeyDown = false;
+
+    //========================
+    glm::vec3 cameraPos = glm::vec3(0.0f);
 };

@@ -388,9 +388,41 @@ SceneStructure SceneParser::parseSceneStructure()
     return sceneStructure;
 }
 
-void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms)
+void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms, float time)
 {
-    glm::mat4 transform = glm::translate(glm::mat4(1.0f), glm::vec3(node.translation[0], node.translation[1], node.translation[2])) * glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2])) * glm::scale(glm::mat4(1.0f), glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+    glm::mat4 translation = glm::translate(glm::mat4(1.0f), glm::vec3(node.translation[0], node.translation[1], node.translation[2]));
+    glm::mat4 rotation = glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2]));
+    glm::mat4 scale = glm::scale(glm::mat4(1.0f), glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+
+    if (time > 0.0f)
+    {
+        for (auto driver : structure.drivers)
+        {
+            if (node.id == driver.node)
+            {
+                if (driver.channel == "translation")
+                {
+                    glm::vec3 vec3;
+                    getInterpolatedValue(vec3, driver.interpolation, driver, time);
+                    translation = glm::translate(glm::mat4(1.0f), vec3);
+                }
+                else if (driver.channel == "rotation")
+                {
+                    glm::vec4 vec4;
+                    getInterpolatedValue(vec4, driver.interpolation, driver, time);
+                    rotation = glm::mat4_cast(glm::quat(vec4.w, vec4.x, vec4.y, vec4.z));
+                }
+                else if (driver.channel == "scale")
+                {
+                    glm::vec3 vec3;
+                    getInterpolatedValue(vec3, driver.interpolation, driver, time);
+                    scale = glm::scale(glm::mat4(1.0f), vec3);
+                }
+            }
+        }
+    }
+
+    glm::mat4 transform = translation * rotation * scale;
     parentTransforms.push_back(transform);
     glm::mat4 totalTransform = glm::mat4(1.0f);
     for (size_t i = parentTransforms.size(); i > 0; --i)
@@ -430,8 +462,56 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vec
     {
         for (auto child : node.children)
         {
-            recordTransform(structure, std::get<Node>(structure.objects[child - 1].object), parentTransforms);
+            recordTransform(structure, std::get<Node>(structure.objects[child - 1].object), parentTransforms, time);
         }
+    }
+}
+
+void SceneParser::getInterpolatedValue(glm::vec3 &vec, std::string method, const Driver &driver, float time)
+{
+    if (method == "STEP")
+    {
+    }
+    else if (method == "LINEAR")
+    {
+        auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
+        if (iter == driver.times.end())
+        {
+            vec = glm::vec3(*(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
+        }
+        else
+        {
+            uint32_t index = iter - driver.times.begin();
+            float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
+            vec = glm::vec3(lerpValue * driver.values[(index - 1) * 3] + (1 - lerpValue) * driver.values[index * 3], lerpValue * driver.values[(index - 1) * 3 + 1] + (1 - lerpValue) * driver.values[index * 3 + 1], lerpValue * driver.values[(index - 1) * 3 + 2] + (1 - lerpValue) * driver.values[index * 3 + 2]);
+        }
+    }
+    else if (method == "SLERP")
+    {
+    }
+}
+
+void SceneParser::getInterpolatedValue(glm::vec4 &vec, std::string method, const Driver &driver, float time)
+{
+    if (method == "STEP")
+    {
+    }
+    else if (method == "LINEAR")
+    {
+        auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
+        if (iter == driver.times.end())
+        {
+            vec = glm::vec4(*(driver.values.end() - 4), *(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
+        }
+        else
+        {
+            uint32_t index = iter - driver.times.begin();
+            float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
+            vec = glm::vec4(lerpValue * driver.values[(index - 1) * 4] + (1 - lerpValue) * driver.values[index * 4], lerpValue * driver.values[(index - 1) * 4 + 1] + (1 - lerpValue) * driver.values[index * 4 + 1], lerpValue * driver.values[(index - 1) * 4 + 2] + (1 - lerpValue) * driver.values[index * 4 + 2], lerpValue * driver.values[(index - 1) * 4 + 3] + (1 - lerpValue) * driver.values[index * 4 + 3]);
+        }
+    }
+    else if (method == "SLERP")
+    {
     }
 }
 
