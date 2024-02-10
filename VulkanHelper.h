@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -104,6 +105,10 @@ private:
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
 
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
+
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
@@ -169,6 +174,7 @@ private:
     void createImageViews();
 
     void createRenderPass();
+    void createDepthResources();
     void createFramebuffers();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
@@ -190,6 +196,9 @@ private:
     void createDescriptorSets(size_t size);
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
+    void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
+    VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+
     bool isDeviceSuitable(VkPhysicalDevice physicalDevice);
     bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDevice);
     SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice physicalDevice);
@@ -198,6 +207,9 @@ private:
     VkExtent2D chooseSwapExtent(GLFWwindow *window, const VkSurfaceCapabilitiesKHR &capabilities);
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice physicalDevice);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    VkFormat findSupportedFormat(const std::vector<VkFormat> &candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+    VkFormat findDepthFormat();
+    bool hasStencilComponent(VkFormat format);
     static std::vector<char> readFile(const std::string &filename);
 
     PFN_vkCmdSetVertexInputEXT pfnVkCmdSetVertexInputEXT = NULL;
