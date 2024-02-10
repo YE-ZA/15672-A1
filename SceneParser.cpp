@@ -381,16 +381,22 @@ SceneStructure SceneParser::parseSceneStructure()
 
     for (auto root : sceneStructure.scene.roots)
     {
-        glm::mat4 originTransform = glm::mat4(1.0f);
-        recordTransform(sceneStructure, std::get<Node>(sceneStructure.objects[root - 1].object), originTransform);
+        std::vector<glm::mat4> parentTransforms;
+        recordTransform(sceneStructure, std::get<Node>(sceneStructure.objects[root - 1].object), parentTransforms);
     }
 
     return sceneStructure;
 }
 
-void SceneParser::recordTransform(SceneStructure &structure, Node node, glm::mat4 transform)
+void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms)
 {
-    glm::mat4 newTransform = glm::translate(glm::mat4(1.0f), glm::vec3(node.translation[0], node.translation[1], node.translation[2])) * glm::mat4_cast(glm::quat(node.rotation[0], node.rotation[1], node.rotation[2], node.rotation[3])) * glm::scale(glm::mat4(1.0f), glm::vec3(node.scale[0], node.scale[1], node.scale[2])) * transform;
+    glm::mat4 transform = glm::translate(glm::mat4(1.0f), glm::vec3(node.translation[0], node.translation[1], node.translation[2])) * glm::mat4_cast(glm::quat(node.rotation[3], node.rotation[0], node.rotation[1], node.rotation[2])) * glm::scale(glm::mat4(1.0f), glm::vec3(node.scale[0], node.scale[1], node.scale[2]));
+    parentTransforms.push_back(transform);
+    glm::mat4 totalTransform = glm::mat4(1.0f);
+    for (size_t i = parentTransforms.size(); i > 0; --i)
+    {
+        totalTransform = parentTransforms[i - 1] * totalTransform;
+    }
 
     if (node.mesh.has_value())
     {
@@ -400,7 +406,7 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, glm::mat
             if (node.mesh.value() == renderInfo.mesh.id)
             {
                 hasInstance = true;
-                renderInfo.transforms.push_back(newTransform);
+                renderInfo.transforms.push_back(totalTransform);
                 break;
             }
         }
@@ -409,7 +415,7 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, glm::mat
         {
             MeshRenderInfo renderInfo;
             renderInfo.mesh = std::get<Mesh>(structure.objects[node.mesh.value() - 1].object);
-            renderInfo.transforms.push_back(newTransform);
+            renderInfo.transforms.push_back(totalTransform);
             structure.meshes.push_back(renderInfo);
         }
     }
@@ -417,14 +423,14 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, glm::mat
     {
         CameraRenderInfo renderInfo;
         renderInfo.camera = std::get<Camera>(structure.objects[node.camera.value() - 1].object);
-        renderInfo.transform = newTransform;
+        renderInfo.transform = totalTransform;
         structure.cameras.push_back(renderInfo);
     }
     if (!node.children.empty())
     {
         for (auto child : node.children)
         {
-            recordTransform(structure, std::get<Node>(structure.objects[child - 1].object), newTransform);
+            recordTransform(structure, std::get<Node>(structure.objects[child - 1].object), parentTransforms);
         }
     }
 }

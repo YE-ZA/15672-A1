@@ -12,8 +12,8 @@ public:
     Application();
     ~Application();
 
-    void loadScene(SceneStructure structure);
-    void renderLoop();
+    void loadScene(const SceneStructure &structure);
+    void renderLoop(SceneStructure &structure, const std::string &cameraName);
 
 private:
     GLFWwindow *window;
@@ -21,6 +21,7 @@ private:
 
     void initWindow();
     static void framebufferResizeCallback(GLFWwindow *window, int width, int height);
+    void updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, const std::string &cameraName);
 
     VulkanHelper helper;
 };

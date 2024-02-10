@@ -8,7 +8,7 @@ int main()
         SceneParser parser("sg-Articulation.s72");
         SceneStructure sceneStructure = parser.parseSceneStructure();
         app.loadScene(sceneStructure);
-        app.renderLoop();
+        app.renderLoop(sceneStructure, "Moving-Camera");
     }
     catch (const std::exception &e)
     {

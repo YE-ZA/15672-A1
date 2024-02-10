@@ -33,13 +33,14 @@ void VulkanHelper::initVulkan(GLFWwindow *window)
     createImageViews();
     createRenderPass();
     createFramebuffers();
+    createDescriptorSetLayout();
     createGraphicsPipeline();
     createCommandPool();
     createCommandBuffers();
     createSyncObjects();
 }
 
-void VulkanHelper::initScene(std::vector<std::string> vertexData, std::vector<glm::mat4> uniformData, std::vector<uint32_t> in_counts, std::vector<uint32_t> in_strides, std::vector<uint32_t> in_posOffsets, std::vector<uint32_t> in_normalOffsets, std::vector<uint32_t> in_colorOffsets, std::vector<std::string> in_posFormats, std::vector<std::string> in_normalFormats, std::vector<std::string> in_colorFormats)
+void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts)
 {
     // create vbos
     for (size_t i = 0; i < vertexData.size(); ++i)
@@ -49,6 +50,9 @@ void VulkanHelper::initScene(std::vector<std::string> vertexData, std::vector<gl
     }
 
     // create ubos
+    createUniformBuffers(uboSize);
+    createDescriptorPool();
+    createDescriptorSets(uboSize);
 
     // assign vertex attributes
     counts.assign(in_counts.begin(), in_counts.end());
@@ -59,9 +63,10 @@ void VulkanHelper::initScene(std::vector<std::string> vertexData, std::vector<gl
     posFormats.assign(in_posFormats.begin(), in_posFormats.end());
     normalFormats.assign(in_normalFormats.begin(), in_normalFormats.end());
     colorFormats.assign(in_colorFormats.begin(), in_colorFormats.end());
+    instanceCounts.assign(in_instanceCounts.begin(), in_instanceCounts.end());
 }
 
-void VulkanHelper::drawFrame(GLFWwindow *window)
+void VulkanHelper::drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj)
 {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -75,6 +80,8 @@ void VulkanHelper::drawFrame(GLFWwindow *window)
     }
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         throw std::runtime_error("failed to acquire swap chain image!");
+
+    updateUniformBuffer(currentFrame, uniformData, view, proj);
 
     // only reset the fence if we are submitting work
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
@@ -130,6 +137,15 @@ void VulkanHelper::cleanup()
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        vkDestroyBuffer(device, uniformBuffers[i], nullptr);
+        vkFreeMemory(device, uniformBuffersMemory[i], nullptr);
+    }
+
+    vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+    vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
 
     for (auto vb : vertexBuffers)
     {
@@ -539,6 +555,24 @@ void VulkanHelper::createFramebuffers()
     }
 }
 
+void VulkanHelper::createDescriptorSetLayout()
+{
+    VkDescriptorSetLayoutBinding uboLayoutBinding{
+        .binding = 0,
+        .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+        .descriptorCount = 1,
+        .stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+        .pImmutableSamplers = nullptr};
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO,
+        .bindingCount = 1,
+        .pBindings = &uboLayoutBinding};
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+        throw std::runtime_error("failed to create descriptor set layout!");
+}
+
 void VulkanHelper::createGraphicsPipeline()
 {
     auto vertShaderCode = readFile("shaders/vert.spv");
@@ -586,7 +620,7 @@ void VulkanHelper::createGraphicsPipeline()
         .rasterizerDiscardEnable = VK_FALSE,
         .polygonMode = VK_POLYGON_MODE_FILL,
         .cullMode = VK_CULL_MODE_BACK_BIT,
-        .frontFace = VK_FRONT_FACE_CLOCKWISE,
+        .frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE,
         .depthBiasEnable = VK_FALSE,
         .lineWidth = 1.0f};
 
@@ -623,7 +657,8 @@ void VulkanHelper::createGraphicsPipeline()
     // Pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{
         .sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
-        .setLayoutCount = 0,
+        .setLayoutCount = 1,
+        .pSetLayouts = &descriptorSetLayout,
         .pushConstantRangeCount = 0};
 
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
@@ -749,13 +784,21 @@ void VulkanHelper::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
     pfnVkCmdSetVertexInputEXT = (PFN_vkCmdSetVertexInputEXT)vkGetDeviceProcAddr(device, "vkCmdSetVertexInputEXT");
 
     VkDeviceSize offsets[] = {0};
+    uint32_t uboOffsets[] = {-static_cast<uint32_t>(sizeof(UniformBufferObject))}; // dummy offset
     for (size_t i = 0; i < vertexBuffers.size(); ++i)
     {
         updateVertexDescriptions(strides[i], posOffsets[i], normalOffsets[i], colorOffsets[i], posFormats[i], normalFormats[i], colorFormats[i]);
         pfnVkCmdSetVertexInputEXT(commandBuffer, 1, &vertexBindingDescriptions, 3, vertexAttributeDescriptions);
 
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[i], offsets);
-        vkCmdDraw(commandBuffer, counts[i], 1, 0, 0);
+
+        for (uint32_t j = 0; j < instanceCounts[i]; ++j)
+        {
+            uboOffsets[0] += static_cast<uint32_t>(sizeof(UniformBufferObject));
+
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 1, uboOffsets);
+            vkCmdDraw(commandBuffer, counts[i], 1, 0, 0);
+        }
     }
 
     vkCmdEndRenderPass(commandBuffer);
@@ -789,6 +832,21 @@ void VulkanHelper::updateVertexDescriptions(uint32_t stride, uint32_t posOffset,
     vertexAttributeDescriptions[2].format = colorF;
 }
 
+void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj)
+{
+    std::vector<UniformBufferObject> ubo;
+    ubo.resize(uniformData.size());
+
+    for (size_t i = 0; i < uniformData.size(); ++i)
+    {
+        ubo[i].model = uniformData[i];
+        ubo[i].view = view;
+        ubo[i].proj = proj;
+    }
+
+    memcpy(uniformBuffersMapped[currentImage], ubo.data(), sizeof(UniformBufferObject) * ubo.size());
+}
+
 void VulkanHelper::createVertexBuffer(const char *meshData, size_t size)
 {
     VkDeviceSize bufferSize = static_cast<VkDeviceSize>(size);
@@ -812,6 +870,21 @@ void VulkanHelper::createVertexBuffer(const char *meshData, size_t size)
 
     vkDestroyBuffer(device, stagingBuffer, nullptr);
     vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+
+void VulkanHelper::createUniformBuffers(size_t size)
+{
+    VkDeviceSize bufferSize = sizeof(UniformBufferObject) * size;
+
+    uniformBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    uniformBuffersMemory.resize(MAX_FRAMES_IN_FLIGHT);
+    uniformBuffersMapped.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        createBuffer(bufferSize, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, uniformBuffers[i], uniformBuffersMemory[i]);
+        vkMapMemory(device, uniformBuffersMemory[i], 0, bufferSize, 0, &uniformBuffersMapped[i]);
+    }
 }
 
 void VulkanHelper::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory)
@@ -870,6 +943,55 @@ void VulkanHelper::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSi
     vkQueueWaitIdle(graphicsQueue);
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+}
+
+void VulkanHelper::createDescriptorPool()
+{
+    VkDescriptorPoolSize poolSize{
+        .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+        .descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT)};
+
+    VkDescriptorPoolCreateInfo poolInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT),
+        .poolSizeCount = 1,
+        .pPoolSizes = &poolSize};
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+        throw std::runtime_error("failed to create descriptor pool!");
+}
+
+void VulkanHelper::createDescriptorSets(size_t size)
+{
+    std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, descriptorSetLayout);
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = descriptorPool;
+    allocInfo.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    allocInfo.pSetLayouts = layouts.data();
+
+    descriptorSets.resize(MAX_FRAMES_IN_FLIGHT);
+    if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
+        throw std::runtime_error("failed to allocate descriptor sets!");
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+        VkDescriptorBufferInfo bufferInfo{
+            .buffer = uniformBuffers[i],
+            .offset = 0,
+            .range = sizeof(UniformBufferObject)}; // just one UniformBufferObject's size, not the whole ubo's size
+
+        VkWriteDescriptorSet descriptorWrite{
+            .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+            .dstSet = descriptorSets[i],
+            .dstBinding = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC,
+            .pBufferInfo = &bufferInfo};
+
+        vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+    }
 }
 
 VkShaderModule VulkanHelper::createShaderModule(const std::vector<char> &code)

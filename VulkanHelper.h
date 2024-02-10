@@ -63,17 +63,17 @@ struct Vertex
 
 struct UniformBufferObject
 {
-    glm::mat4 model;
-    glm::mat4 view;
-    glm::mat4 proj;
+    alignas(16) glm::mat4 model;
+    alignas(16) glm::mat4 view;
+    alignas(16) glm::mat4 proj;
 };
 
 class VulkanHelper
 {
 public:
     void initVulkan(GLFWwindow *window);
-    void initScene(std::vector<std::string> vertexData, std::vector<glm::mat4> uniformData, std::vector<uint32_t> in_counts, std::vector<uint32_t> in_strides, std::vector<uint32_t> in_posOffsets, std::vector<uint32_t> in_normalOffsets, std::vector<uint32_t> in_colorOffsets, std::vector<std::string> in_posFormats, std::vector<std::string> in_normalFormats, std::vector<std::string> in_colorFormats);
-    void drawFrame(GLFWwindow *window);
+    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts);
+    void drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj);
     void cleanup();
 
     VkDevice getDevice();
@@ -97,6 +97,7 @@ private:
     std::vector<VkFramebuffer> swapChainFramebuffers;
 
     VkRenderPass renderPass;
+    VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipeline graphicsPipeline;
 
@@ -118,6 +119,7 @@ private:
     std::vector<std::string> posFormats;
     std::vector<std::string> normalFormats;
     std::vector<std::string> colorFormats;
+    std::vector<uint32_t> instanceCounts;
 
     VkVertexInputBindingDescription2EXT vertexBindingDescriptions{
         .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
@@ -144,6 +146,12 @@ private:
 
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceMemory> vertexBufferMemorys;
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<void *> uniformBuffersMapped;
+
+    VkDescriptorPool descriptorPool;
+    std::vector<VkDescriptorSet> descriptorSets;
 
     void cleanupSwapChain();
     void createInstance();
@@ -162,6 +170,7 @@ private:
 
     void createRenderPass();
     void createFramebuffers();
+    void createDescriptorSetLayout();
     void createGraphicsPipeline();
 
     void createCommandPool();
@@ -170,10 +179,15 @@ private:
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
     void updateVertexDescriptions(uint32_t stride, uint32_t posOffset, uint32_t normalOffset, uint32_t colorOffset, std::string posFormat, std::string normalFormat, std::string colorFormat);
+    void updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj);
 
     void createVertexBuffer(const char *meshData, size_t size);
+    void createUniformBuffers(size_t size);
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+
+    void createDescriptorPool();
+    void createDescriptorSets(size_t size);
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     bool isDeviceSuitable(VkPhysicalDevice physicalDevice);

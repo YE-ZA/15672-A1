@@ -12,12 +12,12 @@ Application::~Application()
     glfwTerminate();
 }
 
-void Application::loadScene(SceneStructure structure)
+void Application::loadScene(const SceneStructure &structure)
 {
     helper.initVulkan(window);
 
     std::vector<std::string> vertexData;
-    std::vector<glm::mat4> uniformData;
+    size_t uboSize = 0;
     std::vector<uint32_t> counts;
     std::vector<uint32_t> strides;
     std::vector<uint32_t> posOffsets;
@@ -26,6 +26,7 @@ void Application::loadScene(SceneStructure structure)
     std::vector<std::string> posFormats;
     std::vector<std::string> normalFormats;
     std::vector<std::string> colorFormats;
+    std::vector<uint32_t> instanceCounts;
 
     for (auto meshInfo : structure.meshes)
     {
@@ -38,22 +39,29 @@ void Application::loadScene(SceneStructure structure)
         posFormats.push_back(meshInfo.mesh.attributes[0].format);
         normalFormats.push_back(meshInfo.mesh.attributes[1].format);
         colorFormats.push_back(meshInfo.mesh.attributes[2].format);
+        instanceCounts.push_back(meshInfo.transforms.size());
 
         for (auto transform : meshInfo.transforms)
         {
-            uniformData.push_back(transform);
+            uboSize++;
         }
     }
 
-    helper.initScene(vertexData, uniformData, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats);
+    helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts);
 }
 
-void Application::renderLoop()
+void Application::renderLoop(SceneStructure &structure, const std::string &cameraName)
 {
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
-        helper.drawFrame(window);
+
+        std::vector<glm::mat4> uniformData;
+        glm::mat4 view;
+        glm::mat4 proj;
+        updateScene(structure, uniformData, view, proj, cameraName);
+
+        helper.drawFrame(window, uniformData, view, proj);
     }
 
     vkDeviceWaitIdle(helper.getDevice());
@@ -75,4 +83,32 @@ void Application::framebufferResizeCallback(GLFWwindow *window, int width, int h
 {
     auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
+}
+
+void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, const std::string &cameraName)
+{
+    // update scene structure's ubo and cam
+
+    for (auto meshInfo : structure.meshes)
+    {
+        for (auto transform : meshInfo.transforms)
+        {
+            uniformData.push_back(transform);
+        }
+    }
+
+    bool findCamera = false;
+    for (auto cameraInfo : structure.cameras)
+    {
+        if (cameraInfo.camera.name == cameraName)
+        {
+            findCamera = true;
+            view = glm::inverse(cameraInfo.transform);
+            proj = glm::perspective(cameraInfo.camera.perspective.vfov, cameraInfo.camera.perspective.aspect, cameraInfo.camera.perspective.near, cameraInfo.camera.perspective.far);
+            proj[1][1] *= -1;
+        }
+    }
+
+    if (!findCamera)
+        throw std::runtime_error("camera doesn't exist!");
 }

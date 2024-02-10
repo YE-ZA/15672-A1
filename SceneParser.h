@@ -134,7 +134,7 @@ public:
     SceneObject parseDriver();
 
     SceneStructure parseSceneStructure();
-    void recordTransform(SceneStructure &structure, Node node, glm::mat4 transform);
+    void recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms);
 
     char getNextToken();
     void moveToken(uint32_t number);
