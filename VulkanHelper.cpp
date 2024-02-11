@@ -881,6 +881,7 @@ void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<
         ubo[i].model = uniformData[i];
         ubo[i].view = view;
         ubo[i].proj = proj;
+        ubo[i].normal = glm::transpose(glm::inverse(uniformData[i]));
     }
 
     memcpy(uniformBuffersMapped[currentImage], ubo.data(), sizeof(UniformBufferObject) * ubo.size());
