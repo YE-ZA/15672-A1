@@ -1,8 +1,20 @@
 #include "Application.h"
 
-Application::Application()
+bool moveCamera = false;
+glm::vec3 cameraPos = glm::vec3(5.0f, 0.0f, 1.0f);
+glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);
+glm::vec3 cameraUp = glm::vec3(0.0f, 0.0f, 1.0f);
+
+bool firstMouse = true;
+float yaw = -90.0f; // yaw is initialized to -90.0 degrees since a yaw of 0.0 results in a direction vector pointing to the right so we initially rotate a bit to the left.
+float pitch = 0.0f;
+float lastX = 0.0f;
+float lastY = 0.0f;
+float fov = 45.0f;
+
+Application::Application(uint32_t width, uint32_t height)
 {
-    initWindow();
+    initWindow(width, height);
 }
 
 Application::~Application()
@@ -50,10 +62,15 @@ void Application::loadScene(const SceneStructure &structure)
     helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts);
 }
 
-void Application::renderLoop(SceneStructure &structure, const std::string &cameraName)
+void Application::renderLoop(SceneStructure &structure, std::string &cameraName)
 {
     while (!glfwWindowShouldClose(window))
     {
+        // per-frame time logic
+        float currentFrame = static_cast<float>(glfwGetTime());
+        deltaTime = currentFrame - lastFrame;
+        lastFrame = currentFrame;
+
         processInput(window);
         glfwPollEvents();
         if (!pause)
@@ -62,8 +79,12 @@ void Application::renderLoop(SceneStructure &structure, const std::string &camer
         }
         else
         {
-            lastPauseTime = time;
-            startTime.reset();
+            lastPauseTime = currentAnimTime;
+            startAnimTime.reset();
+        }
+        if (cameraName != "USER")
+        {
+            cameraName = switchCamera(structure.cameras, cameraName);
         }
 
         std::vector<glm::mat4> uniformData;
@@ -77,16 +98,18 @@ void Application::renderLoop(SceneStructure &structure, const std::string &camer
     vkDeviceWaitIdle(helper.getDevice());
 }
 
-void Application::initWindow()
+void Application::initWindow(uint32_t width, uint32_t height)
 {
     glfwInit();
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Renderer", nullptr, nullptr);
+    window = glfwCreateWindow(width, height, "Vulkan Renderer", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    glfwSetCursorPosCallback(window, mouseCallback);
+    glfwSetScrollCallback(window, scrollCallback);
 }
 
 void Application::framebufferResizeCallback(GLFWwindow *window, int width, int height)
@@ -95,19 +118,63 @@ void Application::framebufferResizeCallback(GLFWwindow *window, int width, int h
     app->framebufferResized = true;
 }
 
+// Reference from LearnOpenGL
+void Application::mouseCallback(GLFWwindow *window, double xposIn, double yposIn)
+{
+    if (moveCamera)
+    {
+        float xpos = static_cast<float>(xposIn);
+        float ypos = static_cast<float>(yposIn);
+
+        if (firstMouse)
+        {
+            lastX = xpos;
+            lastY = ypos;
+            firstMouse = false;
+        }
+
+        float xoffset = xpos - lastX;
+        float yoffset = lastY - ypos; // reversed since y-coordinates go from bottom to top
+        lastX = xpos;
+        lastY = ypos;
+
+        float sensitivity = 0.1f; // change this value to your liking
+        xoffset *= sensitivity;
+        yoffset *= sensitivity;
+
+        yaw += xoffset;
+        pitch += yoffset;
+
+        // make sure that when pitch is out of bounds, screen doesn't get flipped
+        if (pitch > 89.0f)
+            pitch = 89.0f;
+        if (pitch < -89.0f)
+            pitch = -89.0f;
+
+        glm::vec3 front;
+        front.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+        front.y = sin(glm::radians(pitch));
+        front.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+        cameraFront = glm::normalize(front);
+        // adapt to blender coordinate
+        cameraFront = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f)) * glm::vec4(cameraFront, 1.0f);
+        cameraFront = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f)) * glm::vec4(cameraFront, 1.0f);
+    }
+}
+
 void Application::updateTime()
 {
-    if (!startTime.has_value())
+    if (!startAnimTime.has_value())
     {
-        startTime = std::chrono::high_resolution_clock::now();
+        startAnimTime = std::chrono::high_resolution_clock::now();
     }
 
     auto currentTime = std::chrono::high_resolution_clock::now();
-    time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime.value()).count() + lastPauseTime;
-    time = std::fmod(time, maxTime);
+    currentAnimTime = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startAnimTime.value()).count() + lastPauseTime;
+    currentAnimTime = std::fmod(currentAnimTime, maxAnimTime);
 }
 
-void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, const std::string &cameraName)
+void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> &uniformData, glm::mat4 &view, glm::mat4 &proj, std::string &cameraName)
 {
     // update scene structure based on drivers
     structure.meshes.clear();
@@ -115,7 +182,7 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
     for (auto root : structure.scene.roots)
     {
         std::vector<glm::mat4> parentTransforms;
-        SceneParser::recordTransform(structure, std::get<Node>(structure.objects[root - 1].object), parentTransforms, time);
+        SceneParser::recordTransform(structure, std::get<Node>(structure.objects[root - 1].object), parentTransforms, currentAnimTime);
     }
 
     // record updated ubo
@@ -127,20 +194,77 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
         }
     }
 
-    bool findCamera = false;
-    for (auto cameraInfo : structure.cameras)
+    if (cameraName != "USER")
     {
-        if (cameraInfo.camera.name == cameraName)
+        bool findCamera = false;
+        for (auto cameraInfo : structure.cameras)
         {
-            findCamera = true;
-            view = glm::inverse(glm::translate(glm::mat4(1.0f), cameraPos) * cameraInfo.transform); // need change
-            proj = glm::perspective(cameraInfo.camera.perspective.vfov, cameraInfo.camera.perspective.aspect, cameraInfo.camera.perspective.near, cameraInfo.camera.perspective.far);
-            proj[1][1] *= -1;
+            if (cameraInfo.camera.name == cameraName)
+            {
+                findCamera = true;
+                view = glm::inverse(cameraInfo.transform);
+                proj = glm::perspective(cameraInfo.camera.perspective.vfov, cameraInfo.camera.perspective.aspect, cameraInfo.camera.perspective.near, cameraInfo.camera.perspective.far);
+                proj[1][1] *= -1;
+            }
+        }
+
+        if (!findCamera)
+            throw std::runtime_error("camera doesn't exist!");
+    }
+    else
+    {
+        view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+        proj = glm::perspective(glm::radians(fov), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 1000.0f);
+        proj[1][1] *= -1;
+    }
+}
+
+void Application::scrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+{
+    fov -= (float)yoffset;
+    if (fov < 10.0f)
+        fov = 10.0f;
+    if (fov > 90.0f)
+        fov = 90.0f;
+}
+
+std::string Application::switchCamera(const std::vector<CameraRenderInfo> &cameras, const std::string &cameraName)
+{
+    auto iter = cameras.begin();
+    for (iter; iter != cameras.end(); ++iter)
+    {
+        if ((*iter).camera.name == cameraName)
+        {
+            break;
         }
     }
 
-    if (!findCamera)
-        throw std::runtime_error("camera doesn't exist!");
+    if (switchNextCamera)
+    {
+        switchNextCamera = false;
+        if (std::next(iter) != cameras.end())
+        {
+            return (*std::next(iter)).camera.name;
+        }
+        else
+        {
+            return cameras.front().camera.name;
+        }
+    }
+    if (switchPrevCamera)
+    {
+        switchPrevCamera = false;
+        if (iter != cameras.begin())
+        {
+            return (*std::prev(iter)).camera.name;
+        }
+        else
+        {
+            return cameras.back().camera.name;
+        }
+    }
+
+    return cameraName;
 }
 
 void Application::processInput(GLFWwindow *window)
@@ -153,15 +277,48 @@ void Application::processInput(GLFWwindow *window)
         spaceKeyDown = true;
     }
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
+    {
         spaceKeyDown = false;
+    }
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
+    {
+        moveCamera = true;
+    }
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_RELEASE)
+    {
+        moveCamera = false;
+        firstMouse = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS && !rightKeyDown)
+    {
+        switchNextCamera = true;
+        rightKeyDown = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_RELEASE)
+    {
+        rightKeyDown = false;
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS && !leftKeyDown)
+    {
+        switchPrevCamera = true;
+        leftKeyDown = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_RELEASE)
+    {
+        leftKeyDown = false;
+    }
 
-    // float cameraSpeed = static_cast<float>(1.0 / 240);
-    // if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-    //     cameraPos += glm::normalize(glm::cross(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0))) * cameraSpeed;
-    // if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-    //     cameraPos -= glm::normalize(glm::cross(glm::vec3(1, 0, 0), glm::vec3(0, 1, 0))) * cameraSpeed;
-    // if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-    //     cameraPos -= cameraSpeed * glm::vec3(-1, 0, 0);
-    // if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-    //     cameraPos += cameraSpeed * glm::vec3(-1, 0, 0);
+    float cameraSpeed = static_cast<float>(3.0f * deltaTime);
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS && moveCamera)
+        cameraPos += cameraSpeed * cameraFront;
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS && moveCamera)
+        cameraPos -= cameraSpeed * cameraFront;
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS && moveCamera)
+        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && moveCamera)
+        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+    if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS && moveCamera)
+        cameraPos += cameraSpeed * cameraUp;
+    if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS && moveCamera)
+        cameraPos -= cameraSpeed * cameraUp;
 }
