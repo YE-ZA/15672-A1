@@ -3,8 +3,8 @@
 #include "VulkanHelper.h"
 #include "SceneParser.h"
 
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
+extern uint32_t WIDTH;
+extern uint32_t HEIGHT;
 
 // camera
 extern bool moveCamera;
@@ -51,9 +51,11 @@ private:
     std::string switchCamera(const std::vector<CameraRenderInfo> &cameras, const std::string &cameraName);
     bool switchNextCamera = false;
     bool switchPrevCamera = false;
+    bool freezeRendering = false;
 
     void processInput(GLFWwindow *window);
     bool spaceKeyDown = false;
     bool leftKeyDown = false;
     bool rightKeyDown = false;
+    bool debugKeyDown = false;
 };

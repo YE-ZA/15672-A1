@@ -43,11 +43,12 @@ void VulkanHelper::initVulkan(GLFWwindow *window)
 
 void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts)
 {
-    // create vbos
+    // create vbos and AABBs
     for (size_t i = 0; i < vertexData.size(); ++i)
     {
         const std::vector<char> vertices = readFile(vertexData[i]);
         createVertexBuffer(vertices.data(), vertices.size());
+        aabbs.push_back(createAABB(vertices, in_strides[i], in_posOffsets[i], in_normalOffsets[i]));
     }
 
     // create ubos
@@ -67,7 +68,7 @@ void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSiz
     instanceCounts.assign(in_instanceCounts.begin(), in_instanceCounts.end());
 }
 
-void VulkanHelper::drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj)
+void VulkanHelper::drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug)
 {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -82,7 +83,7 @@ void VulkanHelper::drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &u
     else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)
         throw std::runtime_error("failed to acquire swap chain image!");
 
-    updateUniformBuffer(currentFrame, uniformData, view, proj);
+    updateUniformBuffer(currentFrame, uniformData, view, proj, debug);
 
     // only reset the fence if we are submitting work
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
@@ -180,6 +181,14 @@ void VulkanHelper::cleanup()
 VkDevice VulkanHelper::getDevice()
 {
     return device;
+}
+
+void VulkanHelper::setCullingFrustum(float right, float top, float near, float far)
+{
+    frustum.near_right = right;
+    frustum.near_top = top;
+    frustum.near_plane = near;
+    frustum.far_plane = far;
 }
 
 void VulkanHelper::cleanupSwapChain()
@@ -835,8 +844,13 @@ void VulkanHelper::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
         {
             uboOffsets[0] += static_cast<uint32_t>(sizeof(UniformBufferObject));
 
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 1, uboOffsets);
-            vkCmdDraw(commandBuffer, counts[i], 1, 0, 0);
+            bool visible = test_using_separating_axis_theorem(frustum, aabbTransforms[uboOffsets[0] / static_cast<uint32_t>(sizeof(UniformBufferObject))], aabbs[i]);
+
+            if (visible)
+            {
+                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 1, uboOffsets);
+                vkCmdDraw(commandBuffer, counts[i], 1, 0, 0);
+            }
         }
     }
 
@@ -871,10 +885,11 @@ void VulkanHelper::updateVertexDescriptions(uint32_t stride, uint32_t posOffset,
     vertexAttributeDescriptions[2].format = colorF;
 }
 
-void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj)
+void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug)
 {
     std::vector<UniformBufferObject> ubo;
     ubo.resize(uniformData.size());
+    aabbTransforms.resize(uniformData.size());
 
     for (size_t i = 0; i < uniformData.size(); ++i)
     {
@@ -882,6 +897,10 @@ void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<
         ubo[i].view = view;
         ubo[i].proj = proj;
         ubo[i].normal = glm::transpose(glm::inverse(uniformData[i]));
+        if (!debug)
+        {
+            aabbTransforms[i] = view * uniformData[i];
+        }
     }
 
     memcpy(uniformBuffersMapped[currentImage], ubo.data(), sizeof(UniformBufferObject) * ubo.size());

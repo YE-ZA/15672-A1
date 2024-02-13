@@ -1,5 +1,8 @@
 #include "Application.h"
 
+uint32_t WIDTH = 800;
+uint32_t HEIGHT = 600;
+
 bool moveCamera = false;
 glm::vec3 cameraPos = glm::vec3(5.0f, 0.0f, 1.0f);
 glm::vec3 cameraFront = glm::vec3(-1.0f, 0.0f, 0.0f);
@@ -15,6 +18,8 @@ float fov = 45.0f;
 Application::Application(uint32_t width, uint32_t height)
 {
     initWindow(width, height);
+    WIDTH = width;
+    HEIGHT = height;
 }
 
 Application::~Application()
@@ -92,7 +97,7 @@ void Application::renderLoop(SceneStructure &structure, std::string &cameraName)
         glm::mat4 proj;
         updateScene(structure, uniformData, view, proj, cameraName);
 
-        helper.drawFrame(window, uniformData, view, proj);
+        helper.drawFrame(window, uniformData, view, proj, freezeRendering);
     }
 
     vkDeviceWaitIdle(helper.getDevice());
@@ -116,6 +121,8 @@ void Application::framebufferResizeCallback(GLFWwindow *window, int width, int h
 {
     auto app = reinterpret_cast<Application *>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
+    WIDTH = width;
+    HEIGHT = height;
 }
 
 // Reference from LearnOpenGL
@@ -205,6 +212,9 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
                 view = glm::inverse(cameraInfo.transform);
                 proj = glm::perspective(cameraInfo.camera.perspective.vfov, cameraInfo.camera.perspective.aspect, cameraInfo.camera.perspective.near, cameraInfo.camera.perspective.far);
                 proj[1][1] *= -1;
+
+                float top = cameraInfo.camera.perspective.near * std::tanf(0.5f * cameraInfo.camera.perspective.vfov);
+                helper.setCullingFrustum(cameraInfo.camera.perspective.aspect * top, top, -cameraInfo.camera.perspective.near, -cameraInfo.camera.perspective.far);
             }
         }
 
@@ -216,6 +226,9 @@ void Application::updateScene(SceneStructure &structure, std::vector<glm::mat4> 
         view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
         proj = glm::perspective(glm::radians(fov), static_cast<float>(WIDTH) / static_cast<float>(HEIGHT), 0.1f, 1000.0f);
         proj[1][1] *= -1;
+
+        float top = 0.1f * std::tanf(0.5f * glm::radians(fov));
+        helper.setCullingFrustum(static_cast<float>(WIDTH) / static_cast<float>(HEIGHT) * top, top, -0.1f, -1000.0f);
     }
 }
 
@@ -270,7 +283,9 @@ std::string Application::switchCamera(const std::vector<CameraRenderInfo> &camer
 void Application::processInput(GLFWwindow *window)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+    {
         glfwSetWindowShouldClose(window, true);
+    }
     if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceKeyDown)
     {
         pause = !pause;
@@ -306,6 +321,15 @@ void Application::processInput(GLFWwindow *window)
     if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_RELEASE)
     {
         leftKeyDown = false;
+    }
+    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_PRESS && !debugKeyDown)
+    {
+        freezeRendering = !freezeRendering;
+        debugKeyDown = true;
+    }
+    if (glfwGetKey(window, GLFW_KEY_F5) == GLFW_RELEASE)
+    {
+        debugKeyDown = false;
     }
 
     float cameraSpeed = static_cast<float>(3.0f * deltaTime);
