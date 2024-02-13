@@ -469,49 +469,55 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vec
 
 void SceneParser::getInterpolatedValue(glm::vec3 &vec, std::string method, const Driver &driver, float time)
 {
+    auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
+    if (iter == driver.times.end())
+    {
+        vec = glm::vec3(*(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
+        return;
+    }
+
+    uint32_t index = iter - driver.times.begin();
     if (method == "STEP")
     {
+        vec = glm::vec3(driver.values[(index - 1) * 3], driver.values[(index - 1) * 3 + 1], driver.values[(index - 1) * 3 + 2]);
     }
     else if (method == "LINEAR")
     {
-        auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
-        if (iter == driver.times.end())
-        {
-            vec = glm::vec3(*(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
-        }
-        else
-        {
-            uint32_t index = iter - driver.times.begin();
-            float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
-            vec = glm::vec3(lerpValue * driver.values[(index - 1) * 3] + (1 - lerpValue) * driver.values[index * 3], lerpValue * driver.values[(index - 1) * 3 + 1] + (1 - lerpValue) * driver.values[index * 3 + 1], lerpValue * driver.values[(index - 1) * 3 + 2] + (1 - lerpValue) * driver.values[index * 3 + 2]);
-        }
+        float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
+        vec = glm::vec3(lerpValue * driver.values[(index - 1) * 3] + (1 - lerpValue) * driver.values[index * 3], lerpValue * driver.values[(index - 1) * 3 + 1] + (1 - lerpValue) * driver.values[index * 3 + 1], lerpValue * driver.values[(index - 1) * 3 + 2] + (1 - lerpValue) * driver.values[index * 3 + 2]);
     }
     else if (method == "SLERP")
     {
+        // is this even possible?
     }
 }
 
 void SceneParser::getInterpolatedValue(glm::vec4 &vec, std::string method, const Driver &driver, float time)
 {
+    auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
+    if (iter == driver.times.end())
+    {
+        vec = glm::vec4(*(driver.values.end() - 4), *(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
+        return;
+    }
+
+    uint32_t index = iter - driver.times.begin();
     if (method == "STEP")
     {
+        vec = glm::vec4(driver.values[(index - 1) * 4], driver.values[(index - 1) * 4 + 1], driver.values[(index - 1) * 4 + 2], driver.values[(index - 1) * 4 + 3]);
     }
     else if (method == "LINEAR")
     {
-        auto iter = std::lower_bound(driver.times.begin(), driver.times.end(), time);
-        if (iter == driver.times.end())
-        {
-            vec = glm::vec4(*(driver.values.end() - 4), *(driver.values.end() - 3), *(driver.values.end() - 2), *(driver.values.end() - 1));
-        }
-        else
-        {
-            uint32_t index = iter - driver.times.begin();
-            float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
-            vec = glm::vec4(lerpValue * driver.values[(index - 1) * 4] + (1 - lerpValue) * driver.values[index * 4], lerpValue * driver.values[(index - 1) * 4 + 1] + (1 - lerpValue) * driver.values[index * 4 + 1], lerpValue * driver.values[(index - 1) * 4 + 2] + (1 - lerpValue) * driver.values[index * 4 + 2], lerpValue * driver.values[(index - 1) * 4 + 3] + (1 - lerpValue) * driver.values[index * 4 + 3]);
-        }
+        float lerpValue = (time - *iter) / (*(iter - 1) - *iter);
+        vec = glm::vec4(lerpValue * driver.values[(index - 1) * 4] + (1 - lerpValue) * driver.values[index * 4], lerpValue * driver.values[(index - 1) * 4 + 1] + (1 - lerpValue) * driver.values[index * 4 + 1], lerpValue * driver.values[(index - 1) * 4 + 2] + (1 - lerpValue) * driver.values[index * 4 + 2], lerpValue * driver.values[(index - 1) * 4 + 3] + (1 - lerpValue) * driver.values[index * 4 + 3]);
     }
     else if (method == "SLERP")
     {
+        glm::vec4 q1 = glm::vec4(driver.values[(index - 1) * 4], driver.values[(index - 1) * 4 + 1], driver.values[(index - 1) * 4 + 2], driver.values[(index - 1) * 4 + 3]);
+        glm::vec4 q2 = glm::vec4(driver.values[(index) * 4], driver.values[(index) * 4 + 1], driver.values[(index) * 4 + 2], driver.values[(index) * 4 + 3]);
+        float theta = std::acosf(glm::dot(q1, q2));
+        float lerpValue = time - *(iter - 1);
+        vec = std::sinf((1 - lerpValue) * theta) / std::sinf(theta) * q1 + std::sinf(lerpValue * theta) / std::sinf(theta) * q2;
     }
 }
 
