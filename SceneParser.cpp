@@ -119,7 +119,17 @@ SceneObject SceneParser::parseNode()
         node.scale[1] = parseFloat();
         parseToLineEnd();
         node.scale[2] = parseFloat();
-        parseToLineEnd();
+
+        if (sceneFile[current_index + 1] != ',') // empty node
+        {
+            parseToLineEnd();
+            object.object = node;
+            return object;
+        }
+        else
+        {
+            parseToLineEnd();
+        }
     }
     else if (sceneFile[current_index] == 'r')
     {
@@ -130,7 +140,8 @@ SceneObject SceneParser::parseNode()
         throw std::logic_error("no translation and rotation values found!");
     }
 
-    moveToken(1); // get first letter of the mesh/camera
+    moveToken(1); // get first letter of the mesh/camera/children
+    bool onlyChildren = false;
     if (sceneFile[current_index] == 'm')
     {
         moveToken(6); // get first number of the mesh
@@ -138,15 +149,28 @@ SceneObject SceneParser::parseNode()
     }
     else if (sceneFile[current_index] == 'c')
     {
-        moveToken(8); // get first number of the camera
-        node.camera = parseInteger();
-    }
-    else
-    {
-        throw std::logic_error("empty node!");
+        if (sceneFile[current_index + 1] == 'a')
+        {
+            moveToken(8); // get first number of the camera
+            node.camera = parseInteger();
+        }
+        else if (sceneFile[current_index + 1] == 'h')
+        {
+            onlyChildren = true;
+            moveToken(11); // get first number of the children
+            while (sceneFile[current_index] != ']')
+            {
+                node.children.push_back(parseInteger());
+                if (sceneFile[current_index] == ']')
+                    break;
+                moveToken(1); // skip ','
+            }
+            current_index++; // skip ']'
+            getNextToken();  // finish parsing node
+        }
     }
 
-    if (sceneFile[current_index] == ',')
+    if (sceneFile[current_index] == ',' && !onlyChildren)
     {
         parseToLineEnd();
         moveToken(12); // get first number of the children
@@ -515,6 +539,10 @@ void SceneParser::getInterpolatedValue(glm::vec4 &vec, std::string method, const
     {
         glm::vec4 q1 = glm::vec4(driver.values[(index - 1) * 4], driver.values[(index - 1) * 4 + 1], driver.values[(index - 1) * 4 + 2], driver.values[(index - 1) * 4 + 3]);
         glm::vec4 q2 = glm::vec4(driver.values[(index) * 4], driver.values[(index) * 4 + 1], driver.values[(index) * 4 + 2], driver.values[(index) * 4 + 3]);
+        if (glm::dot(q1, q2) < 0.0f)
+        {
+            q2 = glm::vec4(-q2.x, -q2.y, -q2.z, -q2.w); // ensure interpolation is along the shortest path
+        }
         float theta = std::acosf(glm::dot(q1, q2));
         float lerpValue = time - *(iter - 1);
         vec = std::sinf((1 - lerpValue) * theta) / std::sinf(theta) * q1 + std::sinf(lerpValue * theta) / std::sinf(theta) * q2;

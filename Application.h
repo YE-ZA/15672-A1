@@ -22,7 +22,7 @@ extern float fov;
 class Application
 {
 public:
-    Application(uint32_t width = WIDTH, uint32_t height = HEIGHT);
+    Application(uint32_t width, uint32_t height);
     ~Application();
 
     void loadScene(const SceneStructure &structure);
