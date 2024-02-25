@@ -43,7 +43,6 @@ struct Node
 
 struct MeshAttribute
 {
-    std::string attr;
     std::string src;
     uint32_t offset;
     uint32_t stride;

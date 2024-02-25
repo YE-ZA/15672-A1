@@ -8,6 +8,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <stb_image.h>
+
 #include <iostream>
 #include <fstream>
 #include <stdexcept>
@@ -25,6 +27,7 @@
 #include "CullingHelper.h"
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
+const int MAX_TEXTURE_COUNTS = 16;
 
 const std::vector<const char *> validationLayers = {"VK_LAYER_KHRONOS_validation"};
 const std::vector<const char *> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_EXT_VERTEX_INPUT_DYNAMIC_STATE_EXTENSION_NAME};
@@ -113,6 +116,11 @@ private:
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
 
+    std::vector<VkImage> textureImages;
+    std::vector<VkDeviceMemory> textureImageMemorys;
+    std::vector<VkImageView> textureImageViews;
+    VkSampler textureSampler;
+
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
     std::vector<VkFence> inFlightFences;
@@ -198,13 +206,20 @@ private:
     void createUniformBuffers(size_t size);
     void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &bufferMemory);
     void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+    VkCommandBuffer beginSingleTimeCommands();
+    void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
     void createDescriptorPool();
-    void createDescriptorSets(size_t size);
+    void createDescriptorSets();
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
+    void createTextureImage();
+    void createTextureImageViews();
+    void createTextureSampler();
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);
     VkImageView createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags);
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 
     bool isDeviceSuitable(VkPhysicalDevice physicalDevice);
     bool checkDeviceExtensionSupport(VkPhysicalDevice physicalDevice);

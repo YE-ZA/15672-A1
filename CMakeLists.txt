@@ -9,6 +9,7 @@ file(GLOB SRC_FILES
 find_package(Vulkan REQUIRED)
 
 include_directories(${Vulkan_INCLUDE_DIRS})
+include_directories(${PROJECT_SOURCE_DIR}/libs)
 include_directories(${PROJECT_SOURCE_DIR}/libs/glfw-3.3.9.bin.WIN64/include)
 include_directories(${PROJECT_SOURCE_DIR}/libs/glm)
 
