@@ -70,16 +70,20 @@ struct Vertex
 struct UniformBufferObject
 {
     alignas(16) glm::mat4 model;
-    alignas(16) glm::mat4 view;
-    alignas(16) glm::mat4 proj;
     alignas(16) glm::mat4 normal;
+};
+
+struct PushConstants
+{
+    glm::mat4 view;
+    glm::mat4 proj;
 };
 
 class VulkanHelper
 {
 public:
     void initVulkan(GLFWwindow *window);
-    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts);
+    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap);
     void drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug);
     void cleanup();
 
@@ -107,7 +111,9 @@ private:
     VkRenderPass renderPass;
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
+    VkPipelineLayout skyboxPipelineLayout;
     VkPipeline graphicsPipeline;
+    VkPipeline skyboxGraphicsPipeline;
 
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -173,6 +179,8 @@ private:
     VkDescriptorPool descriptorPool;
     std::vector<VkDescriptorSet> descriptorSets;
 
+    bool hasSkybox = false;
+
     void cleanupSwapChain();
     void createInstance();
     void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo);
@@ -193,14 +201,15 @@ private:
     void createFramebuffers();
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
+    void createSkyboxGraphicsPipeline();
 
     void createCommandPool();
     void createCommandBuffers();
     void createSyncObjects();
 
-    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, glm::mat4 view, glm::mat4 proj);
     void updateVertexDescriptions(uint32_t stride, uint32_t posOffset, uint32_t normalOffset, uint32_t colorOffset, std::string posFormat, std::string normalFormat, std::string colorFormat);
-    void updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug);
+    void updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, bool debug);
 
     void createVertexBuffer(const char *meshData, size_t size);
     void createUniformBuffers(size_t size);
@@ -213,7 +222,7 @@ private:
     void createDescriptorSets();
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
-    void createTextureImage();
+    void createTextureImage(std::string filename);
     void createTextureImageViews();
     void createTextureSampler();
     void createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory);

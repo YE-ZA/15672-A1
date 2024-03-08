@@ -32,11 +32,18 @@ std::optional<SceneObject> SceneParser::parse()
         if (token == 'N')
             return parseNode();
         if (token == 'M')
-            return parseMesh();
+        {
+            if (sceneFile[current_index + 1] == 'E')
+                return parseMesh();
+            if (sceneFile[current_index + 1] == 'A')
+                return parseMaterial();
+        }
         if (token == 'C')
             return parseCamera();
         if (token == 'D')
             return parseDriver();
+        if (token == 'E')
+            return parseEnvironment();
     }
     if (token == ',')
     {
@@ -139,8 +146,12 @@ SceneObject SceneParser::parseNode()
     {
         throw std::logic_error("no translation and rotation values found!");
     }
+    else
+    {
+        current_index--; // no t&r&s
+    }
 
-    moveToken(1); // get first letter of the mesh/camera/children
+    moveToken(1); // get first letter of the mesh/camera/environment/children
     bool onlyChildren = false;
     if (sceneFile[current_index] == 'm')
     {
@@ -168,6 +179,11 @@ SceneObject SceneParser::parseNode()
             current_index++; // skip ']'
             getNextToken();  // finish parsing node
         }
+    }
+    else if (sceneFile[current_index] == 'e')
+    {
+        moveToken(13); // get first number of the environment
+        node.environment = parseInteger();
     }
 
     if (sceneFile[current_index] == ',' && !onlyChildren)
@@ -249,8 +265,50 @@ SceneObject SceneParser::parseMesh()
     normal.format = parseString();
     parseToLineEnd();
 
+    MeshAttribute tangent;
+    MeshAttribute texcoord;
+    bool hasMaterial = false;
+    moveToken(1); // get to tangent or color attribute
+    if (sceneFile[current_index] == 'T')
+    {
+        hasMaterial = true;
+
+        moveToken(18); // get first letter of the src
+        tangent.src = parseString();
+        parseToLineEnd();
+
+        moveToken(9); // get first number of the offset
+        tangent.offset = parseInteger();
+        parseToLineEnd();
+
+        moveToken(9); // get first number of the stride
+        tangent.stride = parseInteger();
+        parseToLineEnd();
+
+        moveToken(10); // get first letter of the format
+        tangent.format = parseString();
+        parseToLineEnd();
+
+        moveToken(20); // get first letter of the src
+        texcoord.src = parseString();
+        parseToLineEnd();
+
+        moveToken(9); // get first number of the offset
+        texcoord.offset = parseInteger();
+        parseToLineEnd();
+
+        moveToken(9); // get first number of the stride
+        texcoord.stride = parseInteger();
+        parseToLineEnd();
+
+        moveToken(10); // get first letter of the format
+        texcoord.format = parseString();
+        parseToLineEnd();
+        moveToken(1);
+    }
+
     MeshAttribute color;
-    moveToken(17); // get first letter of the src
+    moveToken(16); // get first letter of the src
     color.src = parseString();
     parseToLineEnd();
 
@@ -264,12 +322,29 @@ SceneObject SceneParser::parseMesh()
 
     moveToken(10); // get first letter of the format
     color.format = parseString();
-    current_index++; // skip '\"'
-    getNextToken();  // finish parsing mesh
 
-    mesh.attributes.push_back(position);
-    mesh.attributes.push_back(normal);
-    mesh.attributes.push_back(color);
+    if (!hasMaterial)
+    {
+        current_index++; // skip '\"'
+        getNextToken();  // finish parsing mesh
+
+        mesh.attributes.push_back(position);
+        mesh.attributes.push_back(normal);
+        mesh.attributes.push_back(color);
+    }
+    else
+    {
+        parseToLineEnd();
+        moveToken(11); // get first number of the material
+        mesh.material = parseInteger();
+        getNextToken(); // finish parsing mesh
+
+        mesh.attributes.push_back(position);
+        mesh.attributes.push_back(normal);
+        mesh.attributes.push_back(tangent);
+        mesh.attributes.push_back(texcoord);
+        mesh.attributes.push_back(color);
+    }
 
     object.object = mesh;
 
@@ -380,6 +455,252 @@ SceneObject SceneParser::parseDriver()
     return object;
 }
 
+SceneObject SceneParser::parseMaterial()
+{
+    Material material;
+    SceneObject object;
+
+    object.type = Type::T_Material;
+    material.id = object_index;
+    parseToLineEnd();
+
+    moveToken(8); // get first letter of the name
+    material.name = parseString();
+    parseToLineEnd();
+
+    moveToken(1); // get first letter of next parameter
+    if (sceneFile[current_index] == 'n')
+    {
+        current_index += 20; // get first letter of the normalMap src
+        Texture texture;
+        texture.src = parseString();
+        textures.push_back(texture.src);
+        if (sceneFile[current_index + 1] != ',')
+        {
+            material.normalMap = texture;
+            parseToLineEnd();
+            moveToken(1);
+        }
+        else
+        {
+            /* explicit type and format */
+        }
+    }
+    if (sceneFile[current_index] == 'd')
+    {
+        current_index += 26; // get first letter of the displacementMap src
+        Texture texture;
+        texture.src = parseString();
+        textures.push_back(texture.src);
+        if (sceneFile[current_index + 1] != ',')
+        {
+            material.displacementMap = texture;
+            parseToLineEnd();
+            moveToken(1);
+        }
+        else
+        {
+            /* explicit type and format */
+        }
+    }
+    if (sceneFile[current_index] == 'p')
+    {
+        current_index += 6; // get to albedo
+        moveToken(9);       // get first letter of the albedo
+        if (sceneFile[current_index] == '[')
+        {
+            // constant value
+            moveToken(1); // get first number of the albedo
+            int R = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+            getNextToken();
+            float G = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+            getNextToken();
+            float B = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+
+            std::string filename = std::string("albedo") + std::to_string(object_index) + std::string(".png");
+            createPNG(filename.c_str(), 1, 1, R, G, B, 255);
+            Texture texture;
+            texture.src = filename;
+            textures.push_back(texture.src);
+            material.pbr.emplace(); // must give it a empty value before call value()
+            material.pbr.value().albedo = texture;
+        }
+        else
+        {
+            // texture
+            moveToken(9); // get first letter of the albedo src
+            Texture texture;
+            texture.src = parseString();
+            textures.push_back(texture.src);
+            if (sceneFile[current_index + 1] != ',')
+            {
+                material.pbr.emplace(); // must give it a empty value before call value()
+                material.pbr.value().albedo = texture;
+                parseToLineEnd();
+            }
+            else
+            {
+                /* explicit type and format */
+            }
+        }
+
+        moveToken(12); // get first number/letter of the roughness
+        if (sceneFile[current_index] != '{')
+        {
+            int R = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+            std::string filename = std::string("roughness") + std::to_string(object_index) + std::string(".png");
+            createPNG(filename.c_str(), 1, 1, R, R, R, 255);
+            Texture texture;
+            texture.src = filename;
+            textures.push_back(texture.src);
+            material.pbr.value().roughness = texture;
+        }
+        else
+        {
+            moveToken(9); // get first letter of the roughness src
+            Texture texture;
+            texture.src = parseString();
+            textures.push_back(texture.src);
+            if (sceneFile[current_index + 1] != ',')
+            {
+                material.pbr.value().roughness = texture;
+                parseToLineEnd();
+            }
+            else
+            {
+                /* explicit type and format */
+            }
+        }
+
+        moveToken(12); // get first number/letter of the metalness
+        if (sceneFile[current_index] != '{')
+        {
+            int R = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd(); // finish parsing material
+
+            std::string filename = std::string("metalness") + std::to_string(object_index) + std::string(".png");
+            createPNG(filename.c_str(), 1, 1, R, R, R, 255);
+            Texture texture;
+            texture.src = filename;
+            textures.push_back(texture.src);
+            material.pbr.value().metalness = texture;
+        }
+        else
+        {
+            moveToken(9); // get first letter of the metalness src
+            Texture texture;
+            texture.src = parseString();
+            textures.push_back(texture.src);
+            if (sceneFile[current_index + 1] != ',')
+            {
+                material.pbr.value().metalness = texture;
+                parseToLineEnd(); // finish parsing material
+            }
+            else
+            {
+                /* explicit type and format */
+            }
+        }
+    }
+    else if (sceneFile[current_index] == 'l')
+    {
+        current_index += 14; // get to albedo
+        moveToken(9);        // get first letter of the albedo
+        if (sceneFile[current_index] == '[')
+        {
+            // constant value
+            moveToken(1); // get first number of the albedo
+            int R = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+            getNextToken();
+            float G = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+            getNextToken();
+            float B = static_cast<int>(parseFloat() * 255);
+            parseToLineEnd();
+
+            std::string filename = std::string("albedo") + std::to_string(object_index) + std::string(".png");
+            createPNG(filename.c_str(), 1, 1, R, G, B, 255);
+            Texture texture;
+            texture.src = filename;
+            textures.push_back(texture.src);
+            material.lambertian.emplace(); // must give it a empty value before call value()
+            material.lambertian.value().albedo = texture;
+        }
+        else
+        {
+            // texture
+            moveToken(9); // get first letter of the albedo src
+            Texture texture;
+            texture.src = parseString();
+            textures.push_back(texture.src);
+            if (sceneFile[current_index + 1] != ',')
+            {
+                material.lambertian.emplace(); // must give it a empty value before call value()
+                material.lambertian.value().albedo = texture;
+                parseToLineEnd(); // finish parsing material
+            }
+            else
+            {
+                /* explicit type and format */
+            }
+        }
+    }
+    else if (sceneFile[current_index] == 'm')
+    {
+        material.mirror = true;
+        parseToLineEnd(); // finish parsing material
+    }
+    else if (sceneFile[current_index] == 'e')
+    {
+        material.environment = true;
+        parseToLineEnd(); // finish parsing material
+    }
+    else if (sceneFile[current_index] == 's')
+    {
+        material.simple = true;
+        parseToLineEnd(); // finish parsing material
+    }
+
+    object.object = material;
+
+    return object;
+}
+
+SceneObject SceneParser::parseEnvironment()
+{
+    Environment environment;
+    SceneObject object;
+
+    object.type = Type::T_Environment;
+    environment.id = object_index;
+    parseToLineEnd();
+
+    moveToken(8); // get first letter of the name
+    environment.name = parseString();
+    parseToLineEnd();
+
+    moveToken(20); // get first letter of the radiance src
+    environment.radiance.src = parseString();
+    parseToLineEnd();
+
+    moveToken(8); // get first letter of the radiance type
+    environment.radiance.type = parseString();
+    parseToLineEnd();
+
+    moveToken(10); // get first letter of the radiance format
+    environment.radiance.format = parseString();
+    parseToLineEnd(); // finish parsing environment
+
+    object.object = environment;
+
+    return object;
+}
+
 SceneStructure SceneParser::parseSceneStructure()
 {
     SceneStructure sceneStructure;
@@ -391,6 +712,9 @@ SceneStructure SceneParser::parseSceneStructure()
             sceneStructure.objects.push_back(obj.value());
     }
 
+    // record all texture file names that used in the scene for initScene
+    sceneStructure.textures.assign(textures.begin(), textures.end());
+
     for (auto obj : sceneStructure.objects)
     {
         if (obj.type == Type::T_Driver)
@@ -400,6 +724,10 @@ SceneStructure SceneParser::parseSceneStructure()
         if (obj.type == Type::T_Scene)
         {
             sceneStructure.scene = std::get<Scene>(obj.object);
+        }
+        if (obj.type == Type::T_Environment)
+        {
+            sceneStructure.environment = std::get<Environment>(obj.object);
         }
     }
 
@@ -481,6 +809,11 @@ void SceneParser::recordTransform(SceneStructure &structure, Node node, std::vec
         renderInfo.camera = std::get<Camera>(structure.objects[node.camera.value() - 1].object);
         renderInfo.transform = totalTransform;
         structure.cameras.push_back(renderInfo);
+    }
+    if (node.environment.has_value())
+    {
+        Environment environment = std::get<Environment>(structure.objects[node.environment.value() - 1].object);
+        structure.environment.emplace(environment);
     }
     if (!node.children.empty())
     {
@@ -634,4 +967,70 @@ std::vector<char> readSceneFile(const std::string &filename)
     file.close();
 
     return buffer;
+}
+
+void createPNG(const char *filename, int width, int height, int R, int G, int B, int A)
+{
+    FILE *fp = fopen(filename, "wb");
+    if (!fp)
+    {
+        std::cerr << "Error: unable to open file " << filename << " for writing." << std::endl;
+        return;
+    }
+
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    if (!png)
+    {
+        std::cerr << "Error: unable to create PNG write structure." << std::endl;
+        fclose(fp);
+        return;
+    }
+
+    png_infop info = png_create_info_struct(png);
+    if (!info)
+    {
+        std::cerr << "Error: unable to create PNG info structure." << std::endl;
+        png_destroy_write_struct(&png, nullptr);
+        fclose(fp);
+        return;
+    }
+
+    if (setjmp(png_jmpbuf(png)))
+    {
+        std::cerr << "Error: an error occurred while creating PNG image." << std::endl;
+        png_destroy_write_struct(&png, &info);
+        fclose(fp);
+        return;
+    }
+
+    png_init_io(png, fp);
+
+    // Set image attributes
+    png_set_IHDR(png, info, width, height, 8, PNG_COLOR_TYPE_RGBA, PNG_INTERLACE_NONE,
+                 PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+    // Write header
+    png_write_info(png, info);
+
+    // Allocate memory for image data
+    png_bytep row = (png_bytep)malloc(4 * width * sizeof(png_byte));
+
+    // Write image data
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            row[x * 4] = R;
+            row[x * 4 + 1] = G;
+            row[x * 4 + 2] = B;
+            row[x * 4 + 3] = A;
+        }
+        png_write_row(png, row);
+    }
+
+    // Cleanup
+    png_write_end(png, nullptr);
+    png_destroy_write_struct(&png, &info);
+    fclose(fp);
+    free(row);
 }

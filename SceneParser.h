@@ -5,6 +5,8 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <png.h>
+
 #include <iostream>
 #include <fstream>
 #include <cstdint>
@@ -19,7 +21,9 @@ enum class Type
     T_Node,
     T_Mesh,
     T_Camera,
-    T_Driver
+    T_Driver,
+    T_Material,
+    T_Environment
 };
 
 struct Scene
@@ -39,6 +43,7 @@ struct Node
     std::vector<uint32_t> children{};
     std::optional<uint32_t> camera;
     std::optional<uint32_t> mesh;
+    std::optional<uint32_t> environment;
 };
 
 struct MeshAttribute
@@ -56,6 +61,7 @@ struct Mesh
     std::string topology;
     uint32_t count;
     std::vector<MeshAttribute> attributes;
+    std::optional<uint32_t> material;
 };
 
 struct CameraInfo
@@ -85,9 +91,48 @@ struct Driver
     std::string interpolation = "LINEAR";
 };
 
+struct Texture
+{
+    std::string src;
+    std::string type = "2D";
+    std::string format = "linear";
+};
+
+struct PBR
+{
+    Texture albedo;
+    Texture roughness;
+    Texture metalness;
+};
+
+struct Lambertian
+{
+    Texture albedo;
+};
+
+struct Material
+{
+    uint32_t id;
+    std::string name;
+    std::optional<Texture> normalMap;
+    std::optional<Texture> displacementMap;
+    std::optional<PBR> pbr;
+    std::optional<Lambertian> lambertian;
+    bool mirror = false;
+    bool environment = false;
+    bool simple = false;
+};
+
+struct Environment
+{
+    uint32_t id;
+    std::string name;
+    Texture radiance;
+};
+
 struct SceneObject
 {
-    std::variant<Scene, Node, Mesh, Camera, Driver> object;
+    std::variant<Scene, Node, Mesh, Camera, Driver, Material, Environment> object;
     Type type;
 };
 
@@ -109,6 +154,8 @@ struct SceneStructure
     std::vector<CameraRenderInfo> cameras;
     std::vector<Driver> drivers;
     Scene scene;
+    std::optional<Environment> environment;
+    std::vector<std::string> textures;
     std::vector<SceneObject> objects;
 };
 
@@ -120,6 +167,7 @@ private:
     uint32_t max_index = 0;
     uint32_t object_index = 0;
     bool finish = false;
+    std::vector<std::string> textures;
 
 public:
     SceneParser(const std::string &filename);
@@ -131,6 +179,8 @@ public:
     SceneObject parseMesh();
     SceneObject parseCamera();
     SceneObject parseDriver();
+    SceneObject parseMaterial();
+    SceneObject parseEnvironment();
 
     SceneStructure parseSceneStructure();
     static void recordTransform(SceneStructure &structure, Node node, std::vector<glm::mat4> parentTransforms, float time = 0.0f);
@@ -147,3 +197,4 @@ public:
 };
 
 static std::vector<char> readSceneFile(const std::string &filename);
+static void createPNG(const char *filename, int width, int height, int R, int G, int B, int A);

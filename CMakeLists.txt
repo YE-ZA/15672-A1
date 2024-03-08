@@ -12,6 +12,8 @@ include_directories(${Vulkan_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/libs)
 include_directories(${PROJECT_SOURCE_DIR}/libs/glfw-3.3.9.bin.WIN64/include)
 include_directories(${PROJECT_SOURCE_DIR}/libs/glm)
+include_directories(${PROJECT_SOURCE_DIR}/libs/libpng/include)
+include_directories(${PROJECT_SOURCE_DIR}/libs/zlib/include)
 
 set(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 
@@ -19,6 +21,8 @@ add_executable(${CMAKE_PROJECT_NAME} ${SRC_FILES})
 
 target_link_libraries(${CMAKE_PROJECT_NAME} ${Vulkan_LIBRARIES})
 target_link_libraries(${CMAKE_PROJECT_NAME} ${PROJECT_SOURCE_DIR}/libs/glfw-3.3.9.bin.WIN64/lib-vc2019/glfw3.lib)
+target_link_libraries(${CMAKE_PROJECT_NAME} ${PROJECT_SOURCE_DIR}/libs/libpng/lib/libpng.lib)
+target_link_libraries(${CMAKE_PROJECT_NAME} ${PROJECT_SOURCE_DIR}/libs/zlib/lib/zlib.lib)
 
 target_compile_features(${CMAKE_PROJECT_NAME} PRIVATE cxx_std_20)
 

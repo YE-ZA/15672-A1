@@ -64,7 +64,14 @@ void Application::loadScene(const SceneStructure &structure)
         }
     }
 
-    helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts);
+    // separate record environment map texture
+    std::string cubemap = "";
+    if(structure.environment.has_value())
+    {
+        cubemap = structure.environment.value().radiance.src;
+    }
+
+    helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts, structure.textures, cubemap);
 }
 
 void Application::renderLoop(SceneStructure &structure, std::string &cameraName)
