@@ -53,19 +53,25 @@ void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSiz
         aabbs.push_back(createAABB(vertices, in_strides[i], in_posOffsets[i], in_normalOffsets[i]));
     }
 
-    // create textures
+    // create skybox
     if (!cubemap.empty())
     {
-        createTextureImage(cubemap);
+        createSkyboxTextureImage(cubemap);
         hasSkybox = true;
     }
+    else
+    {
+        createSkyboxTextureImage("default-cube.png");
+    }
+
+    // create textures
     for (auto texture : textures)
     {
         createTextureImage(texture);
     }
     createTextureImageViews();
     createTextureSampler();
-    
+
     // create ubos
     createUniformBuffers(uboSize);
     createDescriptorPool();
@@ -1319,11 +1325,55 @@ void VulkanHelper::createTextureImage(std::string filename)
     vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
+void VulkanHelper::createSkyboxTextureImage(std::string filename)
+{
+    int texWidth, texHeight, texChannels;
+    stbi_uc *pixels = stbi_load(("textures/" + filename).c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    VkDeviceSize imageSize = texWidth * texHeight * 4 * sizeof(float); // VK_FORMAT_R8G8B8A8_SRGB to VK_FORMAT_R32G32B32A32_SFLOAT
+
+    if (!pixels)
+        throw std::runtime_error("failed to load texture image!");
+
+    float *HDRpixels = convertRGBE(pixels, texWidth, texHeight);
+
+    // separate 6 faces of cubemap
+    texHeight /= 6;
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    createBuffer(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, stagingBuffer, stagingBufferMemory);
+
+    void *data;
+    vkMapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, HDRpixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+    delete[] HDRpixels;
+
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+    textureImages.push_back(std::move(textureImage));
+    textureImageMemorys.push_back(std::move(textureImageMemory));
+    createImage(texWidth, texHeight, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, textureImages.back(), textureImageMemorys.back(), 6, true);
+
+    transitionImageLayout(textureImages.back(), VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
+    copyBufferToImage(stagingBuffer, textureImages.back(), static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 6);
+    transitionImageLayout(textureImages.back(), VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingBufferMemory, nullptr);
+}
+
 void VulkanHelper::createTextureImageViews()
 {
     textureImageViews.resize(textureImages.size());
 
-    for (size_t i = 0; i < textureImageViews.size(); i++)
+    // first image is always the cubemap
+    textureImageViews[0] = createImageView(textureImages[0], VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 6, VK_IMAGE_VIEW_TYPE_CUBE);
+
+    // start from the second texture
+    for (size_t i = 1; i < textureImageViews.size(); i++)
     {
         textureImageViews[i] = createImageView(textureImages[i], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_ASPECT_COLOR_BIT);
     }
@@ -1353,14 +1403,14 @@ void VulkanHelper::createTextureSampler()
         throw std::runtime_error("failed to create texture sampler!");
 }
 
-void VulkanHelper::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory)
+void VulkanHelper::createImage(uint32_t width, uint32_t height, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage &image, VkDeviceMemory &imageMemory, uint32_t arrayLayers, bool useCubemap)
 {
     VkImageCreateInfo imageInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
         .imageType = VK_IMAGE_TYPE_2D,
         .format = format,
         .mipLevels = 1,
-        .arrayLayers = 1,
+        .arrayLayers = arrayLayers,
         .samples = VK_SAMPLE_COUNT_1_BIT,
         .tiling = tiling,
         .usage = usage,
@@ -1370,6 +1420,11 @@ void VulkanHelper::createImage(uint32_t width, uint32_t height, VkFormat format,
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
+
+    if (useCubemap)
+    {
+        imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    }
 
     if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS)
         throw std::runtime_error("failed to create image!");
@@ -1388,19 +1443,19 @@ void VulkanHelper::createImage(uint32_t width, uint32_t height, VkFormat format,
     vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-VkImageView VulkanHelper::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags)
+VkImageView VulkanHelper::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t layerCount, VkImageViewType viewType)
 {
     VkImageViewCreateInfo viewInfo{
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = viewType,
         .format = format};
 
     viewInfo.subresourceRange.aspectMask = aspectFlags;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    viewInfo.subresourceRange.layerCount = layerCount;
 
     VkImageView imageView;
     if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
@@ -1409,7 +1464,7 @@ VkImageView VulkanHelper::createImageView(VkImage image, VkFormat format, VkImag
     return imageView;
 }
 
-void VulkanHelper::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout)
+void VulkanHelper::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount)
 {
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
@@ -1425,7 +1480,7 @@ void VulkanHelper::transitionImageLayout(VkImage image, VkFormat format, VkImage
     barrier.subresourceRange.baseMipLevel = 0;
     barrier.subresourceRange.levelCount = 1;
     barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.layerCount = layerCount;
 
     VkPipelineStageFlags sourceStage;
     VkPipelineStageFlags destinationStage;
@@ -1456,7 +1511,7 @@ void VulkanHelper::transitionImageLayout(VkImage image, VkFormat format, VkImage
     endSingleTimeCommands(commandBuffer);
 }
 
-void VulkanHelper::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void VulkanHelper::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, uint32_t layerCount)
 {
     VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 
@@ -1470,11 +1525,27 @@ void VulkanHelper::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t wi
     region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     region.imageSubresource.mipLevel = 0;
     region.imageSubresource.baseArrayLayer = 0;
-    region.imageSubresource.layerCount = 1;
+    region.imageSubresource.layerCount = layerCount;
 
     vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
     endSingleTimeCommands(commandBuffer);
+}
+
+float *VulkanHelper::convertRGBE(const stbi_uc *pixels, uint32_t width, uint32_t height)
+{
+    float *HDRpixels = new float[width * height * 4];
+
+    for (uint32_t i = 0; i < width * height * 4; i += 4)
+    {
+        uint32_t exp = pixels[i + 3] - 128;
+        HDRpixels[i] = std::ldexpf((static_cast<float>(pixels[i]) + 0.5f) / 256, exp);
+        HDRpixels[i + 1] = std::ldexpf((static_cast<float>(pixels[i + 1]) + 0.5f) / 256, exp);
+        HDRpixels[i + 2] = std::ldexpf((static_cast<float>(pixels[i + 2]) + 0.5f) / 256, exp);
+        HDRpixels[i + 3] = 1.0f;
+    }
+
+    return HDRpixels;
 }
 
 bool VulkanHelper::isDeviceSuitable(VkPhysicalDevice physicalDevice)
