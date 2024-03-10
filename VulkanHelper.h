@@ -67,6 +67,15 @@ struct Vertex
     glm::vec4 color;
 };
 
+struct Vertex2
+{
+    glm::vec3 pos;
+    glm::vec3 normal;
+    glm::vec4 tangent;
+    glm::vec2 texcoord;
+    glm::vec4 color;
+};
+
 struct UniformBufferObject
 {
     alignas(16) glm::mat4 model;
@@ -84,6 +93,7 @@ class VulkanHelper
 public:
     void initVulkan(GLFWwindow *window);
     void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap);
+    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_tangentOffsets, std::vector<uint32_t> &in_texcoordOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_tangentFormats, std::vector<std::string> &in_texcoordFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap);
     void drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug);
     void cleanup();
 
@@ -138,9 +148,13 @@ private:
     std::vector<uint32_t> strides;
     std::vector<uint32_t> posOffsets;
     std::vector<uint32_t> normalOffsets;
+    std::vector<uint32_t> tangentOffsets;
+    std::vector<uint32_t> texcoordOffsets;
     std::vector<uint32_t> colorOffsets;
     std::vector<std::string> posFormats;
     std::vector<std::string> normalFormats;
+    std::vector<std::string> tangentFormats;
+    std::vector<std::string> texcoordFormats;
     std::vector<std::string> colorFormats;
     std::vector<uint32_t> instanceCounts;
 
@@ -148,6 +162,12 @@ private:
         .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
         .binding = 0,
         .stride = sizeof(Vertex),
+        .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
+        .divisor = 1};
+    VkVertexInputBindingDescription2EXT vertexBindingDescriptions2{
+        .sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT,
+        .binding = 0,
+        .stride = sizeof(Vertex2),
         .inputRate = VK_VERTEX_INPUT_RATE_VERTEX,
         .divisor = 1};
     VkVertexInputAttributeDescription2EXT vertexAttributeDescriptions[3]{
@@ -166,6 +186,32 @@ private:
          .binding = 0,
          .format = VK_FORMAT_R8G8B8A8_UNORM,
          .offset = offsetof(Vertex, color)}};
+    VkVertexInputAttributeDescription2EXT vertexAttributeDescriptions2[5]{
+        {.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+         .location = 0,
+         .binding = 0,
+         .format = VK_FORMAT_R32G32B32_SFLOAT,
+         .offset = offsetof(Vertex2, pos)},
+         {.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+         .location = 1,
+         .binding = 0,
+         .format = VK_FORMAT_R32G32B32_SFLOAT,
+         .offset = offsetof(Vertex2, normal)},
+         {.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+         .location = 2,
+         .binding = 0,
+         .format = VK_FORMAT_R32G32B32A32_SFLOAT,
+         .offset = offsetof(Vertex2, tangent)},
+        {.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+         .location = 3,
+         .binding = 0,
+         .format = VK_FORMAT_R32G32_SFLOAT,
+         .offset = offsetof(Vertex2, texcoord)},
+        {.sType = VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT,
+         .location = 4,
+         .binding = 0,
+         .format = VK_FORMAT_R8G8B8A8_UNORM,
+         .offset = offsetof(Vertex2, color)}};
 
     std::vector<VkBuffer> vertexBuffers;
     std::vector<VkDeviceMemory> vertexBufferMemorys;
@@ -180,6 +226,7 @@ private:
     std::vector<VkDescriptorSet> descriptorSets;
 
     bool hasSkybox = false;
+    bool simpleScene = false; // the scene doesn't include any material
 
     void cleanupSwapChain();
     void createInstance();
@@ -209,6 +256,7 @@ private:
 
     void recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex, glm::mat4 view, glm::mat4 proj);
     void updateVertexDescriptions(uint32_t stride, uint32_t posOffset, uint32_t normalOffset, uint32_t colorOffset, std::string posFormat, std::string normalFormat, std::string colorFormat);
+    void updateVertexDescriptions2(uint32_t stride, uint32_t posOffset, uint32_t normalOffset, uint32_t tangentOffset, uint32_t texcoordOffset, uint32_t colorOffset, std::string posFormat, std::string normalFormat, std::string tangentFormat, std::string texcoordFormat, std::string colorFormat);
     void updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, bool debug);
 
     void createVertexBuffer(const char *meshData, size_t size);

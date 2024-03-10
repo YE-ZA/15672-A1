@@ -29,6 +29,7 @@ Application::~Application()
     glfwTerminate();
 }
 
+// implementation indicate that a scene can only have meshes with/without materials
 void Application::loadScene(const SceneStructure &structure)
 {
     helper.initVulkan(window);
@@ -39,24 +40,52 @@ void Application::loadScene(const SceneStructure &structure)
     std::vector<uint32_t> strides;
     std::vector<uint32_t> posOffsets;
     std::vector<uint32_t> normalOffsets;
+    std::vector<uint32_t> tangentOffsets;
+    std::vector<uint32_t> texcoordOffsets;
     std::vector<uint32_t> colorOffsets;
     std::vector<std::string> posFormats;
     std::vector<std::string> normalFormats;
+    std::vector<std::string> tangentFormats;
+    std::vector<std::string> texcoordFormats;
     std::vector<std::string> colorFormats;
     std::vector<uint32_t> instanceCounts;
 
+    bool simpleMaterial = false;
+
     for (auto meshInfo : structure.meshes)
     {
-        vertexData.push_back(meshInfo.mesh.attributes[0].src);
-        counts.push_back(meshInfo.mesh.count);
-        strides.push_back(meshInfo.mesh.attributes[0].stride);
-        posOffsets.push_back(meshInfo.mesh.attributes[0].offset);
-        normalOffsets.push_back(meshInfo.mesh.attributes[1].offset);
-        colorOffsets.push_back(meshInfo.mesh.attributes[2].offset);
-        posFormats.push_back(meshInfo.mesh.attributes[0].format);
-        normalFormats.push_back(meshInfo.mesh.attributes[1].format);
-        colorFormats.push_back(meshInfo.mesh.attributes[2].format);
-        instanceCounts.push_back(meshInfo.transforms.size());
+        if (meshInfo.mesh.material.has_value())
+        {
+            vertexData.push_back(meshInfo.mesh.attributes[0].src);
+            counts.push_back(meshInfo.mesh.count);
+            strides.push_back(meshInfo.mesh.attributes[0].stride);
+            posOffsets.push_back(meshInfo.mesh.attributes[0].offset);
+            normalOffsets.push_back(meshInfo.mesh.attributes[1].offset);
+            tangentOffsets.push_back(meshInfo.mesh.attributes[2].offset);
+            texcoordOffsets.push_back(meshInfo.mesh.attributes[3].offset);
+            colorOffsets.push_back(meshInfo.mesh.attributes[4].offset);
+            posFormats.push_back(meshInfo.mesh.attributes[0].format);
+            normalFormats.push_back(meshInfo.mesh.attributes[1].format);
+            tangentFormats.push_back(meshInfo.mesh.attributes[2].format);
+            texcoordFormats.push_back(meshInfo.mesh.attributes[3].format);
+            colorFormats.push_back(meshInfo.mesh.attributes[4].format);
+            instanceCounts.push_back(meshInfo.transforms.size());
+        }
+        else
+        {
+            simpleMaterial = true;
+
+            vertexData.push_back(meshInfo.mesh.attributes[0].src);
+            counts.push_back(meshInfo.mesh.count);
+            strides.push_back(meshInfo.mesh.attributes[0].stride);
+            posOffsets.push_back(meshInfo.mesh.attributes[0].offset);
+            normalOffsets.push_back(meshInfo.mesh.attributes[1].offset);
+            colorOffsets.push_back(meshInfo.mesh.attributes[2].offset);
+            posFormats.push_back(meshInfo.mesh.attributes[0].format);
+            normalFormats.push_back(meshInfo.mesh.attributes[1].format);
+            colorFormats.push_back(meshInfo.mesh.attributes[2].format);
+            instanceCounts.push_back(meshInfo.transforms.size());
+        }
 
         for (auto transform : meshInfo.transforms)
         {
@@ -66,12 +95,19 @@ void Application::loadScene(const SceneStructure &structure)
 
     // separate record environment map texture
     std::string cubemap = "";
-    if(structure.environment.has_value())
+    if (structure.environment.has_value())
     {
         cubemap = structure.environment.value().radiance.src;
     }
 
-    helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts, structure.textures, cubemap);
+    if (simpleMaterial)
+    {
+        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts, structure.textures, cubemap);
+    }
+    else
+    {
+        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, tangentOffsets, texcoordOffsets, colorOffsets, posFormats, normalFormats, tangentFormats, texcoordFormats, colorFormats, instanceCounts, structure.textures, cubemap);
+    }
 }
 
 void Application::renderLoop(SceneStructure &structure, std::string &cameraName)

@@ -89,6 +89,56 @@ void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSiz
     instanceCounts.assign(in_instanceCounts.begin(), in_instanceCounts.end());
 }
 
+void VulkanHelper::initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_tangentOffsets, std::vector<uint32_t> &in_texcoordOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_tangentFormats, std::vector<std::string> &in_texcoordFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap)
+{
+    // create vbos and AABBs
+    for (size_t i = 0; i < vertexData.size(); ++i)
+    {
+        const std::vector<char> vertices = readFile(vertexData[i]);
+        createVertexBuffer(vertices.data(), vertices.size());
+        aabbs.push_back(createAABB(vertices, in_strides[i], in_posOffsets[i], in_normalOffsets[i]));
+    }
+
+    // create skybox
+    if (!cubemap.empty())
+    {
+        createSkyboxTextureImage(cubemap);
+        hasSkybox = true;
+    }
+    else
+    {
+        createSkyboxTextureImage("default-cube.png");
+    }
+
+    // create textures
+    for (auto texture : textures)
+    {
+        createTextureImage(texture);
+    }
+    createTextureImageViews();
+    createTextureSampler();
+
+    // create ubos
+    createUniformBuffers(uboSize);
+    createDescriptorPool();
+    createDescriptorSets();
+
+    // assign vertex attributes
+    counts.assign(in_counts.begin(), in_counts.end());
+    strides.assign(in_strides.begin(), in_strides.end());
+    posOffsets.assign(in_posOffsets.begin(), in_posOffsets.end());
+    normalOffsets.assign(in_normalOffsets.begin(), in_normalOffsets.end());
+    tangentOffsets.assign(in_tangentOffsets.begin(), in_tangentOffsets.end());
+    texcoordOffsets.assign(in_texcoordOffsets.begin(), in_texcoordOffsets.end());
+    colorOffsets.assign(in_colorOffsets.begin(), in_colorOffsets.end());
+    posFormats.assign(in_posFormats.begin(), in_posFormats.end());
+    normalFormats.assign(in_normalFormats.begin(), in_normalFormats.end());
+    tangentFormats.assign(in_tangentFormats.begin(), in_tangentFormats.end());
+    texcoordFormats.assign(in_texcoordFormats.begin(), in_texcoordFormats.end());
+    colorFormats.assign(in_colorFormats.begin(), in_colorFormats.end());
+    instanceCounts.assign(in_instanceCounts.begin(), in_instanceCounts.end());
+}
+
 void VulkanHelper::drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug)
 {
     vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
@@ -1005,8 +1055,8 @@ void VulkanHelper::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
     {
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxGraphicsPipeline);
 
-        uint32_t uboOffsets[] = {0};
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1, &descriptorSets[currentFrame], 1, uboOffsets);
+        uint32_t offsets[] = {0};
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 1, &descriptorSets[currentFrame], 1, offsets);
 
         // draw a quad to represent sky
         vkCmdDraw(commandBuffer, 6, 1, 0, 0);
@@ -1020,8 +1070,16 @@ void VulkanHelper::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t i
     uint32_t uboOffsets[] = {-static_cast<uint32_t>(sizeof(UniformBufferObject))}; // dummy offset
     for (size_t i = 0; i < vertexBuffers.size(); ++i)
     {
-        updateVertexDescriptions(strides[i], posOffsets[i], normalOffsets[i], colorOffsets[i], posFormats[i], normalFormats[i], colorFormats[i]);
-        pfnVkCmdSetVertexInputEXT(commandBuffer, 1, &vertexBindingDescriptions, 3, vertexAttributeDescriptions);
+        if (simpleScene)
+        {
+            updateVertexDescriptions(strides[i], posOffsets[i], normalOffsets[i], colorOffsets[i], posFormats[i], normalFormats[i], colorFormats[i]);
+            pfnVkCmdSetVertexInputEXT(commandBuffer, 1, &vertexBindingDescriptions, 3, vertexAttributeDescriptions);
+        }
+        else
+        {
+            updateVertexDescriptions2(strides[i], posOffsets[i], normalOffsets[i], tangentOffsets[i], texcoordOffsets[i], colorOffsets[i], posFormats[i], normalFormats[i], tangentFormats[i], texcoordFormats[i], colorFormats[i]);
+            pfnVkCmdSetVertexInputEXT(commandBuffer, 1, &vertexBindingDescriptions2, 5, vertexAttributeDescriptions2);
+        }
 
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffers[i], offsets);
 
@@ -1068,6 +1126,43 @@ void VulkanHelper::updateVertexDescriptions(uint32_t stride, uint32_t posOffset,
     vertexAttributeDescriptions[1].format = normalF;
     vertexAttributeDescriptions[2].offset = colorOffset;
     vertexAttributeDescriptions[2].format = colorF;
+}
+
+void VulkanHelper::updateVertexDescriptions2(uint32_t stride, uint32_t posOffset, uint32_t normalOffset, uint32_t tangentOffset, uint32_t texcoordOffset, uint32_t colorOffset, std::string posFormat, std::string normalFormat, std::string tangentFormat, std::string texcoordFormat, std::string colorFormat)
+{
+    VkFormat posF, normalF, tangentF, texcoordF, colorF;
+    if (posFormat == "R32G32B32_SFLOAT")
+        posF = VK_FORMAT_R32G32B32_SFLOAT;
+    else
+        throw std::logic_error("undefined position format!");
+    if (normalFormat == "R32G32B32_SFLOAT")
+        normalF = VK_FORMAT_R32G32B32_SFLOAT;
+    else
+        throw std::logic_error("undefined normal format!");
+    if (tangentFormat == "R32G32B32A32_SFLOAT")
+        tangentF = VK_FORMAT_R32G32B32A32_SFLOAT;
+    else
+        throw std::logic_error("undefined tangent format!");
+    if (texcoordFormat == "R32G32_SFLOAT")
+        texcoordF = VK_FORMAT_R32G32_SFLOAT;
+    else
+        throw std::logic_error("undefined texcoord format!");
+    if (colorFormat == "R8G8B8A8_UNORM")
+        colorF = VK_FORMAT_R8G8B8A8_UNORM;
+    else
+        throw std::logic_error("undefined color format!");
+
+    vertexBindingDescriptions2.stride = stride;
+    vertexAttributeDescriptions2[0].offset = posOffset;
+    vertexAttributeDescriptions2[0].format = posF;
+    vertexAttributeDescriptions2[1].offset = normalOffset;
+    vertexAttributeDescriptions2[1].format = normalF;
+    vertexAttributeDescriptions2[2].offset = tangentOffset;
+    vertexAttributeDescriptions2[2].format = tangentF;
+    vertexAttributeDescriptions2[3].offset = texcoordOffset;
+    vertexAttributeDescriptions2[3].format = texcoordF;
+    vertexAttributeDescriptions2[4].offset = colorOffset;
+    vertexAttributeDescriptions2[4].format = colorF;
 }
 
 void VulkanHelper::updateUniformBuffer(uint32_t currentImage, const std::vector<glm::mat4> &uniformData, glm::mat4 view, bool debug)
