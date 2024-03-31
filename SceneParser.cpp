@@ -459,6 +459,7 @@ SceneObject SceneParser::parseMaterial()
 {
     Material material;
     SceneObject object;
+    std::vector<std::string> textures;
 
     object.type = Type::T_Material;
     material.id = object_index;
@@ -666,6 +667,8 @@ SceneObject SceneParser::parseMaterial()
         parseToLineEnd(); // finish parsing material
     }
 
+    materialTexturePair.insert({material.id, textures});
+
     object.object = material;
 
     return object;
@@ -713,7 +716,7 @@ SceneStructure SceneParser::parseSceneStructure()
     }
 
     // record all texture file names that used in the scene for initScene
-    sceneStructure.textures.assign(textures.begin(), textures.end());
+    sceneStructure.materialTexturePair = materialTexturePair;
 
     for (auto obj : sceneStructure.objects)
     {
@@ -729,12 +732,53 @@ SceneStructure SceneParser::parseSceneStructure()
         {
             sceneStructure.environment = std::get<Environment>(obj.object);
         }
+        if (obj.type == Type::T_Material)
+        {
+            sceneStructure.materials.push_back(std::get<Material>(obj.object));
+        }
     }
 
     for (auto root : sceneStructure.scene.roots)
     {
         std::vector<glm::mat4> parentTransforms;
         recordTransform(sceneStructure, std::get<Node>(sceneStructure.objects[root - 1].object), parentTransforms);
+    }
+
+    // record the relationship between meshes and materials
+    if (!sceneStructure.materials.empty())
+    {
+        // for each mesh vbo, find the material index in the material list, for binding correct descriptor set
+        for (auto mesh : sceneStructure.meshes)
+        {
+            uint32_t materialCount = 0;
+
+            for (auto material : sceneStructure.materials)
+            {
+                if (mesh.mesh.material == material.id)
+                {
+                    sceneStructure.vboMaterialId.push_back(materialCount);
+                    if(material.pbr.has_value())
+                    {
+                        sceneStructure.vboPipelineId.push_back(0);
+                    }
+                    else if(material.lambertian.has_value())
+                    {
+                        sceneStructure.vboPipelineId.push_back(1);
+                    }
+                    else if(material.mirror == true)
+                    {
+                        sceneStructure.vboPipelineId.push_back(2);
+                    }
+                    else if(material.environment == true)
+                    {
+                        sceneStructure.vboPipelineId.push_back(3);
+                    }
+                    break;
+                }
+
+                materialCount++;
+            }
+        }
     }
 
     return sceneStructure;

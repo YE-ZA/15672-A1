@@ -14,6 +14,7 @@
 #include <vector>
 #include <variant>
 #include <optional>
+#include <unordered_map>
 
 enum class Type
 {
@@ -155,7 +156,10 @@ struct SceneStructure
     std::vector<Driver> drivers;
     Scene scene;
     std::optional<Environment> environment;
-    std::vector<std::string> textures;
+    std::vector<Material> materials;
+    std::vector<uint32_t> vboMaterialId;
+    std::vector<uint32_t> vboPipelineId;
+    std::unordered_map<uint32_t, std::vector<std::string>> materialTexturePair;
     std::vector<SceneObject> objects;
 };
 
@@ -167,7 +171,7 @@ private:
     uint32_t max_index = 0;
     uint32_t object_index = 0;
     bool finish = false;
-    std::vector<std::string> textures;
+    std::unordered_map<uint32_t, std::vector<std::string>> materialTexturePair;
 
 public:
     SceneParser(const std::string &filename);

@@ -23,6 +23,7 @@
 #include <array>
 #include <optional>
 #include <set>
+#include <unordered_map>
 
 #include "CullingHelper.h"
 
@@ -92,8 +93,8 @@ class VulkanHelper
 {
 public:
     void initVulkan(GLFWwindow *window);
-    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap);
-    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_tangentOffsets, std::vector<uint32_t> &in_texcoordOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_tangentFormats, std::vector<std::string> &in_texcoordFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, const std::vector<std::string> &textures, std::string &cubemap);
+    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, std::string &cubemap);
+    void initScene(std::vector<std::string> &vertexData, size_t uboSize, std::vector<uint32_t> &in_counts, std::vector<uint32_t> &in_strides, std::vector<uint32_t> &in_posOffsets, std::vector<uint32_t> &in_normalOffsets, std::vector<uint32_t> &in_tangentOffsets, std::vector<uint32_t> &in_texcoordOffsets, std::vector<uint32_t> &in_colorOffsets, std::vector<std::string> &in_posFormats, std::vector<std::string> &in_normalFormats, std::vector<std::string> &in_tangentFormats, std::vector<std::string> &in_texcoordFormats, std::vector<std::string> &in_colorFormats, std::vector<uint32_t> &in_instanceCounts, std::vector<uint32_t> &materialId, const std::vector<uint32_t> &in_vboMaterialId, const std::vector<uint32_t> &in_vboPipelineId, const std::unordered_map<uint32_t, std::vector<std::string>> &materialTexturePair, std::string &cubemap);
     void drawFrame(GLFWwindow *window, const std::vector<glm::mat4> &uniformData, glm::mat4 view, glm::mat4 proj, bool debug);
     void cleanup();
 
@@ -122,8 +123,14 @@ private:
     VkDescriptorSetLayout descriptorSetLayout;
     VkPipelineLayout pipelineLayout;
     VkPipelineLayout skyboxPipelineLayout;
+    VkPipelineLayout pbrPipelineLayout;
+    VkPipelineLayout lambertianPipelineLayout;
+    VkPipelineLayout mirrorPipelineLayout;
     VkPipeline graphicsPipeline;
     VkPipeline skyboxGraphicsPipeline;
+    VkPipeline pbrGraphicsPipeline;
+    VkPipeline lambertianGraphicsPipeline;
+    VkPipeline mirrorGraphicsPipeline;
 
     VkCommandPool commandPool;
     std::vector<VkCommandBuffer> commandBuffers;
@@ -136,6 +143,9 @@ private:
     std::vector<VkDeviceMemory> textureImageMemorys;
     std::vector<VkImageView> textureImageViews;
     VkSampler textureSampler;
+    std::vector<uint32_t> vboMaterialId;
+    std::vector<uint32_t> vboPipelineId;
+    std::vector<uint32_t> materialTextureCount;
 
     std::vector<VkSemaphore> imageAvailableSemaphores;
     std::vector<VkSemaphore> renderFinishedSemaphores;
@@ -249,6 +259,10 @@ private:
     void createDescriptorSetLayout();
     void createGraphicsPipeline();
     void createSkyboxGraphicsPipeline();
+    void createPbrGraphicsPipeline();
+    void createLambertianGraphicsPipeline();
+    void createMirrorGraphicsPipeline();
+    void bindSuitableGraphicsPipeline(VkCommandBuffer commandBuffer, uint32_t pipelineId);
 
     void createCommandPool();
     void createCommandBuffers();
@@ -266,8 +280,10 @@ private:
     VkCommandBuffer beginSingleTimeCommands();
     void endSingleTimeCommands(VkCommandBuffer commandBuffer);
 
-    void createDescriptorPool();
+    void createDescriptorPool(size_t materialCount = 1);
     void createDescriptorSets();
+    void createMultipleDescriptorSets(size_t materialCount);
+    void bindSuitableDescriptorSet(VkCommandBuffer commandBuffer, uint32_t pipelineId, uint32_t materialSetId, uint32_t *uboOffsets);
 
     VkShaderModule createShaderModule(const std::vector<char> &code);
     void createTextureImage(std::string filename);

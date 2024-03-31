@@ -102,11 +102,16 @@ void Application::loadScene(const SceneStructure &structure)
 
     if (simpleMaterial)
     {
-        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts, structure.textures, cubemap);
+        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, colorOffsets, posFormats, normalFormats, colorFormats, instanceCounts, cubemap);
     }
     else
     {
-        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, tangentOffsets, texcoordOffsets, colorOffsets, posFormats, normalFormats, tangentFormats, texcoordFormats, colorFormats, instanceCounts, structure.textures, cubemap);
+        std::vector<uint32_t> materialId;
+        for (auto material: structure.materials)
+        {
+            materialId.push_back(material.id);
+        }
+        helper.initScene(vertexData, uboSize, counts, strides, posOffsets, normalOffsets, tangentOffsets, texcoordOffsets, colorOffsets, posFormats, normalFormats, tangentFormats, texcoordFormats, colorFormats, instanceCounts, materialId, structure.vboMaterialId, structure.vboPipelineId, structure.materialTexturePair, cubemap);
     }
 }
 
