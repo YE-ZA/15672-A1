@@ -487,6 +487,13 @@ SceneObject SceneParser::parseMaterial()
             /* explicit type and format */
         }
     }
+    else
+    {
+        Texture texture;
+        texture.src = "default-normal.png";
+        textures.push_back(texture.src);
+        material.normalMap = texture;
+    }
     if (sceneFile[current_index] == 'd')
     {
         current_index += 26; // get first letter of the displacementMap src
@@ -757,19 +764,19 @@ SceneStructure SceneParser::parseSceneStructure()
                 if (mesh.mesh.material == material.id)
                 {
                     sceneStructure.vboMaterialId.push_back(materialCount);
-                    if(material.pbr.has_value())
+                    if (material.pbr.has_value())
                     {
                         sceneStructure.vboPipelineId.push_back(0);
                     }
-                    else if(material.lambertian.has_value())
+                    else if (material.lambertian.has_value())
                     {
                         sceneStructure.vboPipelineId.push_back(1);
                     }
-                    else if(material.mirror == true)
+                    else if (material.mirror == true)
                     {
                         sceneStructure.vboPipelineId.push_back(2);
                     }
-                    else if(material.environment == true)
+                    else if (material.environment == true)
                     {
                         sceneStructure.vboPipelineId.push_back(3);
                     }
